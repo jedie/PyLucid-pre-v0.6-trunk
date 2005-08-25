@@ -13,9 +13,15 @@ somit alle zusätzlichen " " -> "&nbsp;" und "\n" -> "<br/>" umwandlung
 sparen. Das Klappt aus mit allen Browsern super, nur nicht mit dem IE ;(
 """
 
-__version__="0.2.0"
+__version__="0.2.1"
 
 __history__="""
+v0.2.2
+    - Falscher <br>-Tag korrigiert
+v0.2.1
+    - zwei print durch sys.stdout.write() ersetzt, da ansonsten ein \n eingefügt wurde, der
+      im Browser eine zusätzliches Leerzeichen produzierte und somit den Source-Code unbrauchbar
+      machte :(
 v0.2.0
     - Anpassung damit es mit lucidFunction funktioniert.
 v0.1.1
@@ -106,12 +112,12 @@ class Parser:
 
         # handle newlines
         if toktype in (token.NEWLINE, tokenize.NL):
-            print '<br\>\n'
+            sys.stdout.write( '<br />' )
             return
 
         # Spaces
         if newpos > oldpos:
-            print self.raw[oldpos:newpos].replace(" ","&nbsp;")
+            sys.stdout.write( self.raw[oldpos:newpos].replace(" ","&nbsp;") )
 
         # map token type to a color group
         if token.LPAR <= toktype and toktype <= token.OP:
@@ -123,12 +129,12 @@ class Parser:
         toktext = cgi.escape( toktext )
 
         # Zeilenumbrüche umwandeln
-        toktext = toktext.replace("\n","<br\>\n")
+        toktext = toktext.replace("\n","<br />")
 
         # Non-Breaking-Spaces
         toktext = toktext.replace(" ","&nbsp;")
 
-        print '<span class="t%s">%s</span>' % (toktype,toktext)
+        sys.stdout.write( '<span class="t%s">%s</span>' % (toktype,toktext) )
 
         #~ print "\n>>>",toktype
 

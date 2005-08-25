@@ -93,10 +93,10 @@ class internals:
         self.tools      = PyLucid["tools"]
 
         self.optimize_table_link  = '<a href="'
-        self.optimize_table_link += self.config.system.poormans_url
+        self.optimize_table_link += self.config.system.real_self_url
         self.optimize_table_link += '?command=internals&optimize" title="optimize all SQL tables">optimize tables</a>'
 
-        self.back_link = '<a href="%s?command=internals">back</a>' % self.config.system.poormans_url
+        self.back_link = '<a href="%s?command=internals">back</a>' % self.config.system.real_self_url
 
     def action( self ):
         # Aktion starten

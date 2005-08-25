@@ -62,7 +62,7 @@ class ListOfNewSides:
         self.tools          = PyLucid["tools"]
 
         self.link_url  = '<li>%(date)s - <a href="'
-        self.link_url += self.config.system.poormans_url + self.config.system.page_ident
+        self.link_url += self.config.system.real_self_url + self.config.system.page_ident
         self.link_url += '%(link)s">%(title)s</a></li>\n'
 
     def make( self ):

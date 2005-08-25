@@ -12,9 +12,11 @@ Editor für alles was mit aussehen zu tun hat:
 
 __author__ = "Jens Diemer (www.jensdiemer.de)"
 
-__version__="0.0.3"
+__version__="0.0.4"
 
 __history__="""
+v0.0.4
+    - Bug: Internal-Page Edit geht nun wieder
 v0.0.3
     - Bug: Edit Template: http://sourceforge.net/tracker/index.php?func=detail&aid=1273348&group_id=146328&atid=764837
 v0.0.2
@@ -335,7 +337,9 @@ class edit_look:
             # Daten der internen Seite, die editiert werden soll
             edit_data = self.db.get_internal_page_data( internal_page_name )
         except IndexError:
-            return "bad internal-page id!"
+            self.page_msg( "bad internal-page name: '%s' !" % cgi.escape(internal_page_name) )
+            self.edit_internal_page_select()
+            return
 
         # Daten der interne Seite zum editieren der internen Seiten holen ;)
         edit_page   = self.db.get_internal_page("edit_internal_page")
@@ -344,7 +348,7 @@ class edit_look:
         markup_option   = OptionMaker.build_from_list( self.config.available_markups, edit_data["markup"] )
 
         back_url = "%s?command=edit_internal_page" % self.config.system.real_self_url
-        form_url =                            "%s&save=%s" % ( back_url, internal_page_name )
+        form_url = "%s&save=%s" % ( back_url, internal_page_name )
 
         try:
             edit_page["content"] = edit_page["content"] % {
@@ -358,7 +362,8 @@ class edit_look:
         except KeyError, e:
             return "<h1>generate internal Page fail:</h1><h4>KeyError:'%s'</h4>" % e
 
-        return edit_page["content"], edit_page["markup"]
+        print edit_page["content"]
+        #~ return edit_page["content"], edit_page["markup"]
 
     def save_internal_page( self, internal_page_name ):
         """ Speichert einen editierte interne Seite """
@@ -366,16 +371,17 @@ class edit_look:
             page_data = {
                 "content"       : self.CGIdata["content"],
                 "description"   : self.CGIdata["description"],
-                #~ "markup"        : self.CGIdata["markup"],
+                "markup"        : self.CGIdata["markup"],
             }
         except KeyError,e:
-            return self.error(
-                "Formdata not complete.", e, "set internal Pages to default with install_PyLucid.py",
-                "use back-Button!"
-            )
+            print "Formdata not complete.", e
+            print "set internal Pages to default with install_PyLucid.py"
+            print "(use back-Button!)"
+            return
+
         self.db.update_internal_page( internal_page_name, page_data )
 
-        print "<h3>internal page saved!</h3>"
+        self.page_msg( "internal page '%s' saved!" % cgi.escape( internal_page_name ) )
         print self.edit_internal_page_select()
 
     #_______________________________________________________________________

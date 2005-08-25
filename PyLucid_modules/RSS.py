@@ -1,9 +1,13 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
 
-__version__="0.2.2"
+__version__="0.2.4"
 
 __history__="""
+v0.2.4
+    - Timeout beim empfangen des RSS feeds eingebaut (ab Python 2.3)
+v0.2.3
+    - Bug: <small>-Tag wurde beim Datum nicht geschlossen
 v0.2.2
     - Anpassung zum PyLucid Modul
 v0.2.1
@@ -77,7 +81,20 @@ class RSS:
         }
 
     def print_rss( self, url ):
-        rssDocument = xml.dom.minidom.parse( urllib.urlopen( url ) )
+        try:
+            import socket
+            socket.setdefaulttimeout(1)
+        except AttributeError:
+            # Geht erst ab Python 2.3 :(
+            pass
+
+        try:
+            rss_data = urllib.urlopen( url )
+        except Exception, e:
+            print "[Can't get RSS feed '%s' Error:'%s']" % ( url, e )
+            return
+
+        rssDocument = xml.dom.minidom.parse( rss_data )
 
         for node in self.getElementsByTagName(rssDocument, 'item'):
             print '<ul class="RSS">'
@@ -86,7 +103,7 @@ class RSS:
             print self.get_txt( node, "title", "<no title>" )
             print "</a></h1></li>"
 
-            self.print_txt( node, "date",           '<li><small>%(data)s</li>' )
+            self.print_txt( node, "date",           '<li><small>%(data)s</small></li>' )
             self.print_txt( node, "description",    '<li>%(data)s</li>' )
             print "</ul>"
 

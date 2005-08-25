@@ -1,25 +1,11 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
 
-# by jensdiemer.de (steht unter GPL-License)
+__author__  = "Jens Diemer (www.jensdiemer.de)"
+__license__ = "GNU General Public License (GPL)"
+__url__     = "http://www.PyLucid.org"
 
-
-
-#~ import sys
-
-#~ from PyLucid_modules.user_auth import module_info
-#~ help(module_info)
-#~ print "-"*80
-
-#~ from PyLucid_system import module_manager
-#~ module_manager = module_manager.module_manager()
-#~ module_manager.read_module_info( "PyLucid_modules" )
-#~ module_manager.debug()
-#~ print module_manager.get_orders()
-#~ print module_manager.get_front_menu()
-#~ sys.exit()
-
-
+__info__ = """<a href="%s" title="PyLucid - A OpenSource CMS in pure Python CGI by Jens Diemer">PyLucid</a> v0.3.3""" % __url__
 
 """
 Rendert eine komplette Seite
@@ -55,15 +41,17 @@ Klasse werden Informationen über das Module/Plugin festgehalten, die vom
 Module-Manager eingelesen werden und PyLucid zur ferfügung gestellt werden.
 """
 
-__author__  = "Jens Diemer (www.jensdiemer.de)"
-__license__ = "GNU General Public License (GPL)"
-__url__     = "http://www.PyLucid.org"
-
-__info__ = """<a href="%s" title="PyLucid - A OpenSource CMS in pure Python CGI by Jens Diemer">PyLucid</a> v0.3.2""" % __url__
-
-__version__="0.2.12"
+__version__="0.2.15"
 
 __history__="""
+v0.2.15
+    - Die Umstellung mit check_user_agent() ist doch nicht so einfach gewesen und brauchte
+        einige andere Änderungen :(
+v0.2.14
+    - NEU: check_user_agent() - Für Unterscheidung zwischen Brower und Suchmaschine
+v0.2.13
+    - Die gefakte 404-Fehlerseite benutzt nun statt HTTP_SERVER die Angaben aus HTTP_HOST. Dies ist besonders
+        dann wichtig, wenn auf dem Server nicht die Hauptdomain verwendet wurde.
 v0.2.12
     - NEU: verify_page(): Überprüft die Rechte, ob der aktuelle Benutzer die Seite sehen darf, oder nicht
 v0.2.11
@@ -189,13 +177,22 @@ class LucidRender:
         self.config         = config
         self.PyLucid["config"] = self.config
 
-        if self.config.system.poormans_modrewrite == True:
-            # Frühzeite überprüfung der URL
-            self.check_request()
-
         # Speichert Nachrichten die in der Seite angezeigt werden sollen
         self.page_msg       = sessiondata.page_msg()
         self.PyLucid["page_msg"] = self.page_msg
+
+        # Anhand des user agent werden die Pfade und evtl. gesetzt
+        self.check_user_agent()
+
+        #~ self.page_msg( "Debug, poormans_modrewrite:", config.system.poormans_modrewrite )
+        #~ self.page_msg( "Debug, script_filename.: '%s'" % config.system.script_filename )
+        #~ self.page_msg( "Debug, document_root...: '%s'" % config.system.document_root )
+        #~ self.page_msg( "Debug, real_self_url...: '%s'" % config.system.real_self_url )
+        #~ self.page_msg( "Debug, poormans_url....: '%s'" % config.system.poormans_url )
+
+        if self.config.system.poormans_modrewrite == True:
+            # Frühzeite überprüfung der URL
+            self.check_request()
 
         # CGI Post/Get Daten
         self.CGIdata        = sessiondata.CGIdata( self.PyLucid )
@@ -251,6 +248,47 @@ class LucidRender:
 
     #_____________________________________________________________________________________________________
 
+    def check_user_agent( self ):
+        """
+        Legt Pfade und poormans_modrewrite fest.
+
+        Anhand des user-agent wird poormans_modrewrite evtl. ausgeschaltet, damit Suchmaschinen
+        die Seiten auch indexieren, dürfen sie keine poormans_modrewrite 404 Fehlerseiten "sehen".
+        """
+        config.system.real_self_url = config.system.script_filename[len(config.system.document_root):]
+
+        if config.system.poormans_modrewrite != True:
+            # poormans_modrewrite ist ausgeschaltet.
+            config.system.poormans_url = config.system.real_self_url
+            return
+
+        user_agent = os.environ["HTTP_USER_AGENT"]
+
+        for word in config.system.mod_rewrite_user_agents:
+            if user_agent.find( word ) != -1:
+                # poormans_modrewrite: activated
+                config.system.page_ident = ""
+                #~ self.page_msg( "Debug: Browser identified, poormans_modrewrite activated." )
+
+                if config.system.real_self_url == "/index.py":
+                    # Ist im Hauptverzeichnis installiert
+                    config.system.poormans_url = ""
+                else:
+                    # Dateiname (index.py) abscheiden
+                    config.system.poormans_url = os.path.split( config.system.real_self_url )[0]
+
+                return
+
+        # Es wurde kein Browser erkannt, also wird kein poormans_modrewrite
+        # verwendet.
+        #~ self.page_msg( "Debug: Browser not identified, poormans_modrewrite deactivated." )
+        config.system.poormans_modrewrite = False
+
+        # Damit die Links absolut sind:
+        config.system.poormans_url = config.system.real_self_url
+
+    #_____________________________________________________________________________________________________
+
     def check_request( self ):
         """
         Überprüft die Anfrage, wenn mit poormans_modrewrite gearbeitet wird.
@@ -275,8 +313,8 @@ class LucidRender:
             # Kein URL Parameter vorhanden
             clean_url = request_uri
 
-        if clean_url == self.config.system.real_self_url:
-            # Direkter Aufruf von PyLucid's index.py, also alles OK
+        if clean_url == config.system.real_self_url:
+            # PyLucid's index.py wird aufgerufen
             return
 
         # URL Parameter abschneiden
@@ -310,7 +348,7 @@ class LucidRender:
         deep_url = [i for i in request_uri.split("/") if i!=""][:-1]
         try:
             # Server Adresse einfügen
-            deep_url.insert(0, os.environ["SERVER_NAME"] )
+            deep_url.insert(0, os.environ["HTTP_HOST"] )
             # URL zusammensetzten
             deep_url = "http://%s" % "/".join( deep_url )
         except KeyError:
@@ -321,9 +359,9 @@ class LucidRender:
 
 
         try:
-            root_url = "http://%s%s" % (os.environ["SERVER_NAME"], self.config.system.poormans_url )
+            root_url = "http://%s%s" % (os.environ["HTTP_HOST"], self.config.system.real_self_url )
         except KeyError:
-            root_url = self.config.system.poormans_url
+            root_url = self.config.system.real_self_url
 
         alternative_urls.append( root_url )
 
@@ -490,9 +528,14 @@ class LucidRender:
                     'There is no REQUEST_URI in Environment!'
                 )
 
-            request_uri = request_uri[len(self.config.system.poormans_url):]
+            # Scheidet das evtl. vorhandene Verzeichnis ab, in dem sich PyLucid
+            # befindet. Denn das gehört nicht zum Seitennamen den der User sehen will.
+            if request_uri.startswith( self.config.system.poormans_url ):
+                request_uri = request_uri[len(self.config.system.poormans_url):]
+
+            #~ self.page_msg( "request_uri:", request_uri )
+
             self.check_page_name( request_uri )
-            #~ self.debug()
             return
 
         if len( self.CGIdata ) == 0:
@@ -531,6 +574,8 @@ class LucidRender:
 
     def check_page_name( self, page_name ):
         """ ermittelt anhand des page_name die page_id """
+        #~ self.page_msg( "Debug: check_page_name( '%s' )" % page_name )
+
         page_name = urllib.unquote( page_name )
         self.CGIdata["REQUEST_URI"] = page_name
 
@@ -547,9 +592,14 @@ class LucidRender:
 
         page_id = 0
         for name in page_name_split:
+            #~ self.page_msg( name )
+            if name.startswith("index.py?") and name[-1] == "=":
+                # Ist ein Parameter und kein Seitenname
+                continue
+
             try:
                 page_id = self.db.select(
-                        select_items    = ["id"],
+                        select_items    = ["id","parent"],
                         from_table      = "pages",
                         where           = [ ("name",name), ("parent",page_id) ]
                     )[0]["id"]
@@ -585,7 +635,12 @@ class LucidRender:
         #~ self.CGIdata.debug()
 
         page_id = self.CGIdata["page_id"]
-        page_permitViewPublic = self.db.get_permitViewPublic( page_id )
+        try:
+            page_permitViewPublic = self.db.get_permitViewPublic( page_id )
+        except IndexError:
+            self.page_msg( "Can't find page." )
+            self.set_default_page()
+            return
         #~ self.page_msg( "page_permitViewPublic:",page_permitViewPublic )
 
         if self.session.has_key("isadmin"):
@@ -618,12 +673,7 @@ class LucidRender:
         """ Behandelt alle URL-"command="-Parameter """
         #~ self.CGIdata.debug()
         self.log( "Special PyLuid command: '%s'" % order )
-
-        #~ print "Content-type: text/html\n"
-        #~ print "<pre>"
-        #~ help(module_manager)
-        #~ print "</pre>"
-        #~ sys.exit()
+        #~ self.page_msg( "Debug - command: '%s'" % order )
 
         # "Kommando"-Daten aus dem Module-Manager holen
         order_data = self.module_manager.get_orders()
@@ -637,11 +687,10 @@ class LucidRender:
 
 
 if __name__ == "__main__":
-    #~ print "Content-type: text/html\n"
+    #~ print "Content-type: text/html; charset=utf-8\r\n"
     #~ print "<pre>"
-    MyLR = LucidRender()
-    page_content = MyLR.make()
+    page_content = LucidRender().make()
     #~ print "</pre>"
 
-    print "Content-type: text/html; charset=utf-8\r\n"#\r\n"
+    print "Content-type: text/html; charset=utf-8\r\n"
     print page_content

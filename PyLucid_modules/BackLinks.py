@@ -66,11 +66,11 @@ class backlinks:
         self.preferences    = PyLucid["preferences"]
 
         self.indexlink = '<a href="%s">Index</a>' % (
-            self.config.system.poormans_url + self.config.system.page_ident
+            self.config.system.real_self_url + self.config.system.page_ident
         )
 
         self.backlink  = '<a href="'
-        self.backlink += self.config.system.poormans_url + self.config.system.page_ident
+        self.backlink += self.config.system.real_self_url + self.config.system.page_ident
         self.backlink += '%(url)s">%(title)s</a>'
 
         #~ self.config.debug()

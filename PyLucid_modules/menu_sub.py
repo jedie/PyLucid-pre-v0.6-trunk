@@ -84,7 +84,7 @@ class sub_menu:
 
         self.link_url  = self.preferences["subMenu"]["before"] # List Item Anfang, default: <li>
         self.link_url += '<a href="'
-        self.link_url += self.config.system.poormans_url + self.config.system.page_ident
+        self.link_url += self.config.system.real_self_url + self.config.system.page_ident
         self.link_url += '%(link)s">%(title)s</a>'
         self.link_url += self.preferences["subMenu"]["after"] + "\n"# List Item ende, default: </li>
 
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     sys.path.insert( 0, "../" )
     from PyLucid_system import SQL, sessiondata
     import config
-    config.system.poormans_url ="X"
+    config.system.real_self_url ="X"
     print "Content-type: text/html\n"
     db_handler = SQL.db()
     config.readpreferences( db_handler )

@@ -1,9 +1,14 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
 
-__version__="0.0.3"
+__version__="0.0.5"
 
 __history__="""
+v0.0.5
+    - Änderung: Pfade müßen nun nicht mehr per Hand eingetragen werden!
+v0.0.4
+    - NEU: mod_rewrite_user_agents
+    - Änderung: page_ident muß in jedem Fall gesetzt werden
 v0.0.3
     - NEU: system.robots_tag
     - NEU: system.ModuleManager_error_handling
@@ -43,19 +48,21 @@ class system:
     # =False -> Fehler in einem Modul führen zu einem CGI-Traceback ( cgitb.enable() )
     # =True  -> Fehler in einem Modul werden in einem Satz zusammen gefasst
     ModuleManager_error_handling = True
+    #~ ModuleManager_error_handling = False
 
     # Fehlerabfrage beim importieren von Modulen im Module-Manager
     # =True  -> Import-Fehler werden immer angezeigt
     # =False -> Import-Fehler sehen nur eingeloggte Administratoren
     ModuleManager_import_error = False
+    #~ ModuleManager_import_error = True
 
     # Damit Suchmaschienen nicht auch interne Seiten indexieren, passt PyLucid den
     # Inhalt des '<lucidTag:robots/>'-Tag je nach Typ der Seite an.
     # Dazu sollte im Header der Seite eine folgende Zeile stehen:
     # <meta name="robots" content="<lucidTag:robots/>" />
     robots_tag = {
-        "content_pages"     : "index",  # Alle Seiten die ein ?command=xyz haben
-        "internal_pages"    : "noindex" # Normale CMS-Seiten
+        "content_pages"     : "index,follow",
+        "internal_pages"    : "noindex"
     }
 
     # Pfad zur Ralf Mieke's md5.js
@@ -72,53 +79,12 @@ class system:
     # Damit sind die Internen Seiten in der DB makiert
     internal_group_id = -1
 
-    ## real_self_url und poormans_url
-    # Bei manchen Webhostern sind CGI Programm nicht außerhalb
-    # des ./cgi-bin Verzeichnisses erlaubt :( Es ist sehr
-    # unwahrscheinlich das man dann aber Apache's mod_rewrite
-    # zur Verfügung hat.
-    # Um dennoch eine halbwegs "saubere" URL zu haben, hab ich mir
-    # da was ausgedacht. Mit Hilfe von SSI (Server Side Include)
-    # ist es möglich eine halbwegs schöne URL zu backen.
+    script_filename = os.environ['SCRIPT_FILENAME']
+    document_root   = os.path.normpath( os.environ['DOCUMENT_ROOT'] )
     #
-    # Im Hauptverzeichnis seines WebSpace packt man eine Indexdatei
-    # mit folgendem Inhalt:
-    #
-    # ./index.shtml
-    # ------------------------------------------------------
-    # <!--#exec cgi="/cgi-bin/PyLucid/index.py" -->
-    # ------------------------------------------------------
-    #
-    # Leider werden keine POST und GET Informationen mit so einer
-    # SSI-Ausführung an PyLucid weiter geleitet. Deshalb muß die
-    # real_self_url Variable auf die echte index.py weisen.
-    # Der Pfad muß absolut gesetzt werden!
-    #
-    # Zur generierung der schönen URL, also für alle normalen
-    # Seitenaufrufe dient die poormans_url Variable.
-    #
-    # Das klappt allerdings nur, wenn Apache als Index ein Python
-    # Skript benutzen würde.
-    # http://httpd.apache.org/docs/2.0/mod/mod_dir.html#directoryindex
-    # DirectoryIndex index.py
-    #
-    #
-    # Beispiel Konfiguration
-    # ----------------------
-    #   - nur /cgi-bin/ erlaubt
-    #   - SSI verfügbar: /index.shtml eingerichtet
-    # real_self_url = "/cgi-bin/PyLucid/index.py"
-    # poormans_url = "/"
-    #
-    #   - CGIs auch außerhalb von /cgi-bin/ erlaubt
-    #   - /index.python
-    # real_self_url = "/index.py"
-    # poormans_url = "/"
-    #
-    real_self_url   = "/index.py"
-    poormans_url    = "/"
-    #
-    # Mit welchem Parameter sollen die Links gebildet werden
+    # Paremter, der für Links genommen werden soll. Dieser wird automatisch
+    # auf ="" gesetzt, wenn poormans_modrewrite eingeschaltet ist. Er muß
+    # immer mit "?" anfangen und mit "=" enden und muß immer gesetzt werden.
     # Standart: "?p="
     page_ident      = "?p="
 
@@ -127,11 +93,12 @@ class system:
     # zu erhalten kann man mittels "Customized error messages" in der
     # .htaccess arbeiten. Dabei legt man für einen 404 Fehler (Seite nicht
     # gefunden) das ErrorDocument auf die PyLucid's index.py Seite fest.
-    # Bsp .htaccess Eintrag:
-    # ErrorDocument 404 /index.py
-    #
     # Ausgewertet wird dabei der os.environ-Eintrag "REQUEST_URI"
-    # Mit poormans_modrewrite muß page_ident="" sein!
+    # .htaccess Eintrag:
+    #   ErrorDocument 404 /index.py
+    #
+    # Wenn poormans_modrewrite verwendet werden soll, muß poormans_url leer oder am
+    # Ende kein "/" haben!
     #~ poormans_modrewrite = True
     poormans_modrewrite = False
     #
@@ -139,6 +106,11 @@ class system:
     # beim "poormans_modrewrite = True" werden Requests auf Dateien
     # mit den angegebenen Endungen direkt am Anfang abgehandelt.
     mod_rewrite_filter = ("py","php","js","css","gif","png","jpg","jpeg")
+    #
+    # Nur, wenn eines der Wörter im User-Agent vorkommt, wird poormans_modrewrite
+    # auch wirklich eingeschaltet. So sehen Suchmaschienen die Seiten und nicht
+    # nur 404-Fehlerseiten ;)
+    mod_rewrite_user_agents = ("Gecko","Mozilla","Opera")
 
 
 ## Hinweis

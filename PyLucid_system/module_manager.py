@@ -9,9 +9,12 @@ Module Manager
 
 """
 
-__version__="0.0.7"
+__version__="0.0.8"
 
 __history__="""
+v0.0.8
+    - Andere Handhabung von Modul-Ausgaben auf stderr. Diese sehen nur eingeloggte User als
+        page_msg.
 v0.0.7
     - NEU: Module können nun auch nur normale print Ausgaben machen, die dann in die
         Seite "eingeblendet" werden sollen
@@ -255,18 +258,29 @@ class module_manager:
         self.oldstdout = sys.stdout
         self.oldstderr = sys.stderr
 
-        self.out_redirect = redirector()
+        sys.stdout = redirector()
+        sys.stderr = redirector()
 
-        sys.stdout = self.out_redirect
-        sys.stderr = self.out_redirect
 
     def _get_redirect_data( self ):
         """
         liefert zwischengespeicherte Ausgaben zurück
         """
-        sys.stdout = self.oldstdout
+        # Ausgaben auf stderr aus redirector() abfragen
+        err = sys.stderr.get()
+        if (err != "") and (self.session.ID != False):
+            self.page_msg( "Module Error-Massage:", err )
+
+        # Original stderr wiederherstellen
         sys.stderr = self.oldstderr
-        return self.out_redirect.get()
+
+        # Ausgaben auf stdout aus redirector() abfragen
+        out = sys.stdout.get()
+
+        # Original stdout wiederherstellen
+        sys.stdout = self.oldstdout
+
+        return out
 
     def start_lucidFunction( self, matchobj ):
         """

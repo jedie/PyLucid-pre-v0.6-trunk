@@ -44,7 +44,7 @@ class SiteMap:
         self.config = PyLucid_objects["config"]
 
         self.link  = '<a href="'
-        self.link += self.config.system.poormans_url + self.config.system.page_ident
+        self.link += self.config.system.real_self_url + self.config.system.page_ident
         self.link += '%(link)s">%(name)s</a>'
 
     def action( self ):

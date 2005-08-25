@@ -458,20 +458,19 @@ class page_editor:
                 return "<h3>Error to insert new side:'%s'</h3><p>Use browser back botton!</p>" % e
 
             self.page_msg( "New side saved." )
-            return
+        else:
+            # Eine Seite wurde editiert.
+            try:
+                self.db.update(
+                        table   = "pages",
+                        data    = new_page_data,
+                        where   = ("id",self.CGIdata["page_id"]),
+                        limit   = 1
+                    )
+            except Exception, e:
+                return "<h3>Error to update side data: '%s'</h3>" % e
 
-        # Eine Seite wurde editiert.
-        try:
-            self.db.update(
-                    table   = "pages",
-                    data    = new_page_data,
-                    where   = ("id",self.CGIdata["page_id"]),
-                    limit   = 1
-                )
-        except Exception, e:
-            return "<h3>Error to update side data: '%s'</h3>" % e
-
-        self.page_msg( "New side data updated." )
+            self.page_msg( "New side data updated." )
 
 
 

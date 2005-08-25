@@ -100,6 +100,7 @@ class pagerender:
         # Regeln mit dynamischen Modulerweiterungen ergänzen "<lucidTag:.../>"
         lucidTags_modules_data = self.module_manager.get_lucidTags()
         for tag_module, data in lucidTags_modules_data.iteritems():
+            #~ print "Debug, replace_lucidTags(): tag_module:",tag_module
             tag = "<lucidTag:%s/>" % data["lucidTag"]
             rules.append(
                 ( tag, self.module_manager.start_module(data) )
