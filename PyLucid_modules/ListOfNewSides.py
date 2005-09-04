@@ -7,9 +7,11 @@
 Generiert eine Liste der "letzten Änderungen"
 """
 
-__version__="0.0.5"
+__version__="0.0.6"
 
 __history__="""
+v0.0.6
+    - Bug: Links waren falsch: config.system.real_self_url -> self.config.system.poormans_url
 v0.0.5
     - Anpassung an neuer Absolute-Seiten-Addressierung
 v0.0.4
@@ -62,7 +64,7 @@ class ListOfNewSides:
         self.tools          = PyLucid["tools"]
 
         self.link_url  = '<li>%(date)s - <a href="'
-        self.link_url += self.config.system.real_self_url + self.config.system.page_ident
+        self.link_url += self.config.system.poormans_url + self.config.system.page_ident
         self.link_url += '%(link)s">%(title)s</a></li>\n'
 
     def make( self ):

@@ -8,16 +8,20 @@ Generiert das SiteMap
 <lucidTag:SiteMap/>
 """
 
-__version__="0.0.2"
+__version__="0.0.4"
 
 __history__="""
+v0.0.4
+    - Bug: Links waren falsch: config.system.real_self_url -> self.config.system.poormans_url
+v0.0.3
+    - Neue Tags für CSS
 v0.0.2
     - "must_login" und "must_admin" für Module-Manager hinzugefügt
 v0.0.1
     - erste Version
 """
 
-
+import cgitb;cgitb.enable()
 import urllib
 
 
@@ -44,7 +48,7 @@ class SiteMap:
         self.config = PyLucid_objects["config"]
 
         self.link  = '<a href="'
-        self.link += self.config.system.real_self_url + self.config.system.page_ident
+        self.link += self.config.system.poormans_url + self.config.system.page_ident
         self.link += '%(link)s">%(name)s</a>'
 
     def action( self ):
@@ -67,10 +71,10 @@ class SiteMap:
         return parents
 
     def make_sitemap( self, parentname = "", id = 0, deep = 0 ):
-        self.page += '<ul>\n'
+        self.page += '<ul class="id_%s deep_%s">\n' % ( id, deep )
         for site in self.data:
             if site["parent"] == id:
-                self.page += '<li class="deep_%s">' % deep
+                self.page += '<li class="id_%s deep_%s">' % ( site["id"], deep )
 
                 self.page += self.link % {
                     "link"  : urllib.quote( parentname + "/" + site["name"] ),
