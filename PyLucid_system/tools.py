@@ -5,9 +5,15 @@
 Verschiedene Tools f�r den Umgang mit lucid
 """
 
-__version__="0.0.4"
+__version__="0.0.6"
 
 """History
+v0.0.6
+    - subprocess2(): Feststellen des self.killed (Ob der Timeout erreicht wurde) über den
+        vergleich der Ausführungszeit mit der Timeout-Zeit
+v0.0.5
+    - Änderungen an subprocess2(): zusätzliche Exception's abgefangen
+    - out_buffer() fügt kein sep mehr ein
 v0.0.4
     - NEU: out_buffer()
 v0.0.3
@@ -20,12 +26,8 @@ v0.0.1
 
 import cgitb;cgitb.enable()
 
-import os, sys, time, re, htmlentitydefs, threading, signal
-
-try:
-    import subprocess
-except ImportError:
-    from PyLucid_python_backports import subprocess
+import os, sys, cgi, time, re, htmlentitydefs, threading, signal
+import subprocess
 
 # Für Debug-print-Ausgaben
 #~ print "Content-type: text/html\n\n<pre>%s</pre>" % __file__
@@ -37,7 +39,7 @@ PyLucid = {} # Dieses dict wird von index.py mit den Objekt-Klassen "gefüllt"
 
 #________________________________________________________________________________________________
 
-def convert_date_from_sql( RAWsqlDate ):
+def convert_date_from_sql( RAWsqlDate, format="preferences" ):
     """
     Wandelt ein Datum aus der SQL-Datenbank in ein Format, welches
     in den preferences festgelegt wurde.
@@ -52,9 +54,13 @@ def convert_date_from_sql( RAWsqlDate ):
         # ist, mit einem Hinweis, zurück liefern, als garnichts ;)
         return "ERROR:"+date
 
-    # Python-time-Format zu einem String laut preferences wandeln
-    date = time.strftime( PyLucid["preferences"]["core"]["formatDateTime"], date )
-    return date
+    if format == "preferences":
+        # Python-time-Format zu einem String laut preferences wandeln
+        return time.strftime( PyLucid["preferences"]["core"]["formatDateTime"], date )
+    elif format == "DCTERMS.W3CDTF":
+        return time.strftime( "%Y-%m-%d", date )
+    else:
+        return time.strftime( "%x", date )
 
 def convert_time_to_sql( time_value ):
     """
@@ -102,6 +108,81 @@ def formatter( number, format="%0.2f", comma=",", thousand=".", grouplength=3):
 #________________________________________________________________________________________________
 
 
+class forms:
+    def SideOptionList( self, with_id = False, select = 0 ):
+        """
+        Kombiniert html_option_maker und parent_tree_maker und erstellt eine
+        HTML-Auswahlliste in der eine Seiten-ID anhand des Seitennamens ausgewählt werden kann.
+        Wird u.a. beim editieren und beim löschen einer Seite verwendet
+        """
+        return html_option_maker().build_from_list(
+            data        = parent_tree_maker().make_parent_option(),
+            select_item = select
+        )
+
+
+
+class parent_tree_maker:
+    """
+    Generiert eine Auswahlliste aller Seiten
+    Wird beim editieren für die parent-Seiten-Auswahl benötigt
+    """
+    def __init__( self ):
+        self.db = PyLucid["db"]
+
+    def make_parent_option( self ):
+        # Daten aus der DB holen
+        data = self.db.select(
+            select_items    = ["id", "name", "parent"],
+            from_table      = "pages",
+            order           = ("position","ASC"),
+        )
+
+        # Daten umformen
+        tmp = {}
+        for line in data:
+            parent  = line["parent"]
+            id_name = ( line["id"], line["name"] )
+            if tmp.has_key( line["parent"] ):
+                tmp[parent].append( id_name )
+            else:
+                tmp[parent] = [ id_name ]
+
+        self.tree = [ (0, "_| root") ]
+        self.build( tmp, tmp.keys() )
+        return self.tree
+
+    def build( self, tmp, keys, parent=0, deep=1 ):
+        "Bildet aus den Aufbereiteten Daten"
+        if not tmp.has_key( parent ):
+            # Seite hat keine Unterseiten
+            return deep-1
+
+        for id, name in tmp[parent]:
+            # Aktuelle Seite vermerken
+            self.tree.append( (id, "%s| %s" % ("_"*(deep*3),name) ) )
+            #~ print "_"*(deep*3) + name
+            deep = self.build( tmp, keys, id, deep+1 )
+
+        return deep-1
+
+#~ if __name__ == "__main__":
+    #~ testdaten = {
+        #~ 0: [(1, "eins"), (13, "zwei"), (9, "drei")],
+        #~ 13: [(14, "zwei 1"), (15, "zwei 2")],
+        #~ 14: [(16, "zwei 2 drunter")]
+    #~ }
+    #~ pt = parent_tree("")
+    #~ pt.tree = []
+    #~ pt.build( testdaten, testdaten.keys() )
+    #~ for id,name in pt.tree:
+        #~ print "%2s - %s" % (id,name)
+    #~ sys.exit()
+
+
+
+
+
 
 class html_option_maker:
     """
@@ -121,7 +202,7 @@ class html_option_maker:
         return self.build_from_list( data_list, select_item )
 
 
-    def build_from_list( self, data, selected_item="" ):
+    def build_from_list( self, data, select_item="" ):
         """
         Generiert aus >data< html-option-zeilen
 
@@ -151,13 +232,13 @@ class html_option_maker:
         result = ""
         for value, txt in data:
 
-            if value == selected_item:
+            if value == select_item:
                 selected = ' selected="selected"'
             else:
                 selected = ""
 
             result += '<option value="%s"%s>%s</option>\n' % (
-                value, selected, txt
+                cgi.escape( str(value) ), selected, cgi.escape( str(txt) )
             )
 
         return result
@@ -172,6 +253,7 @@ class html_option_maker:
     #~ selected_item = 1
     #~ print option_maker().build_from_list( data, selected_item ).replace("</option>","</option>\n")
     #~ sys.exit()
+
 
 
 
@@ -191,7 +273,8 @@ class out_buffer:
 
     def write( self, *txt ):
         txt = [str(i) for i in txt]
-        self.data += self.sep + " ".join( txt )
+        #~ self.data += self.sep + " ".join( txt )
+        self.data += " ".join( txt )
 
     def __call__( self, *txt ):
         self.write( *txt )
@@ -202,61 +285,29 @@ class out_buffer:
     def flush( self ):
         return
 
+class redirector:
+    def __init__( self ):
+        self.oldout = sys.stdout
+        self.olderr = sys.stderr
+
+        self.out_buffer = out_buffer()
+        sys.stdout = self.out_buffer
+        sys.stderr = self.out_buffer
+
+    def get( self ):
+        sys.stdout = self.oldout
+        sys.stderr = self.olderr
+        return self.out_buffer.get()
+
+#~ print "redirector test:"
+#~ r = redirector()
+#~ print "1"
+#~ out = r.get()
+#~ print "2"
+#~ print "out:", out
+#~ sys.exit()
 
 #________________________________________________________________________________________________
-
-
-class subprocess2_OLD:
-    def __init__( self, command, cwd, out_obj, timeout=2, cycle_time=0.5 ):
-        self.out_obj    = out_obj
-
-        self.run( command, cwd ) # Prozess starten
-        self.process.wait()
-        #~ self.wait( timeout, cycle_time )
-        self.stdout = self.process.stdout
-
-    def run( self, command, cwd ):
-        "Führt per subprocess einen den Befehl 'self.command' aus."
-        self.process = subprocess.Popen(
-                command,
-                cwd     = cwd,
-                shell   = True,
-                stdout  = subprocess.PIPE,
-                stderr  = subprocess.STDOUT
-            )
-
-    #~ def stop( self, maintained_time ):
-        #~ """
-        #~ Testet ob der Prozess noch läuft, wenn ja, wird er mit
-        #~ os.kill() (nur unter UNIX verfügbar!) abgebrochen.
-        #~ """
-        #~ if self.process.poll() != None:
-            #~ return
-
-        #~ self.out_obj.write( "(Prozess wird nach %ssec abgebrochen)" % maintained_time )
-        #~ try:
-        #~ os.kill( self.process.pid, signal.SIGQUIT )
-        #~ except
-
-    #~ def wait( self, timeout, cycle_time ):
-        #~ wait_time = 0
-        #~ while wait_time < timeout:
-            #~ self.out_obj.write( "JO", wait_time, self.process.poll() )
-            #~ self.out_obj.write( self.stdout.read() )
-            #~ time.sleep( cycle_time )
-            #~ if self.process.poll() != None:
-                #~ # Der Prozess ist von alleine beendet
-                #~ return
-
-            #~ wait_time += cycle_time
-
-        #~ self.out_obj.write( wait_time, cycle_time, timeout )
-
-        #~ # Prozess abbrechen
-        #~ self.stop( wait_time )
-
-    #~ def get_process_obj( self ):
-        #~ return self.process
 
 
 class subprocess2(threading.Thread):
@@ -288,12 +339,22 @@ class subprocess2(threading.Thread):
 
         threading.Thread.__init__(self)
 
+        start_time = time.time()
         self.start()
         self.join( self.timeout )
         self.stop()
+        duration_time = time.time() - start_time
+
+        if duration_time >= timeout:
+            # Die Ausführung brauchte zu lange, also wurde der Process
+            # wahrscheinlich gekillt...
+            self.killed = True
 
         # Rückgabewert verfügbar machen
-        self.returncode = self.process.returncode
+        try:
+            self.returncode = self.process.returncode
+        except:
+            self.returncode = -1
 
     def run(self):
         "Führt per subprocess den Befehl 'self.command' aus."
@@ -306,25 +367,30 @@ class subprocess2(threading.Thread):
             )
 
         # Ausgaben speichern
-        while 1:
-            line = self.process.stdout.readline()
-            if line == "": break
-            self.out_data += line
+        self.out_data = self.process.stdout.read()
 
     def stop( self ):
         """
         Testet ob der Prozess noch läuft, wenn ja, wird er mit
         os.kill() (nur unter UNIX verfügbar!) abgebrochen.
         """
-        if self.process.poll() != None:
+        #~ poll = self.process.poll()
+        #~ except:
+            #~ pass
+        #~ else:
+        #~ if poll != None:
             # Prozess ist schon beendet
-            return
+            #~ return
+        #~ self.killed = True
 
-        self.killed = True
         try:
             os.kill( self.process.pid, signal.SIGQUIT )
-        except:
+        except Exception:
+            # Process war schon beendet, oder os.kill() ist nicht verfügbar
             pass
+        #~ else:
+            #~ # Process mußte beendet werden
+            #~ self.killed = True
 
 
 #________________________________________________________________________________________________

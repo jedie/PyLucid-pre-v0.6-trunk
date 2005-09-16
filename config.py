@@ -47,8 +47,8 @@ class system:
     # Fehlerabfrage bei Module/Plugins über den Module-Manager
     # =False -> Fehler in einem Modul führen zu einem CGI-Traceback ( cgitb.enable() )
     # =True  -> Fehler in einem Modul werden in einem Satz zusammen gefasst
-    ModuleManager_error_handling = True
-    #~ ModuleManager_error_handling = False
+    #~ ModuleManager_error_handling = True
+    ModuleManager_error_handling = False
 
     # Fehlerabfrage beim importieren von Modulen im Module-Manager
     # =True  -> Import-Fehler werden immer angezeigt
@@ -116,6 +116,7 @@ class system:
 ## Hinweis
 # der Tabellen-Prefix sollte keine Leer-/Sonderzeichen erhalten.
 dbconf = {
+    #~ "dbTyp"             : "sqlite",
     "dbHost"            : 'localhost', # Evtl. muß hier die Domain rein
     "dbDatabaseName"    : 'DatabaseName',
     "dbUserName"        : 'UserName',
@@ -123,7 +124,7 @@ dbconf = {
     "dbTablePrefix"     : 'lucid_',
     "dbdatetime_format" : '%Y-%m-%d %H:%M:%S', # SQL-Datetime-String-Format
 }
-
+#~ dbconf["dbHost"]="192.168.6.2"
 
 available_markups = ["none","textile"]
 

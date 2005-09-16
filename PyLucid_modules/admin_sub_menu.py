@@ -20,8 +20,6 @@ v0.0.1
 """
 
 __todo__ = """
-Irgendwie sollte die Reihenfolge der Modul-Kategorieren vom Admin festgelegt
-werden können, aber wie?
 """
 
 # Python-Basis Module einbinden

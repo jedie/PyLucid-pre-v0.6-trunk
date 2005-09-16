@@ -9,9 +9,11 @@ Module Manager
 
 """
 
-__version__="0.0.8"
+__version__="0.1.0"
 
 __history__="""
+v0.1.0
+    - Komplett neu Programmiert!
 v0.0.8
     - Andere Handhabung von Modul-Ausgaben auf stderr. Diese sehen nur eingeloggte User als
         page_msg.
@@ -36,290 +38,496 @@ v0.0.1
 """
 
 
-import sys, os, glob
+import sys, os, glob, imp, cgi
 import cgitb;cgitb.enable()
 
 
-# Für Debug-print-Ausgaben
-#~ print "Content-type: text/html\n\n<pre>%s</pre>" % __file__
-#~ print "<pre>"
-
-
-
-class package_info:
-    def get_package_names( self, package_name ):
-        """Liefert eine Liste aller Dateinamen eines Paketes zurück"""
-        try:
-            package_path = __import__( package_name ).__path__[0]
-        except:
-            return []
-        package_list = []
-        path = os.path.join( package_path, "*.py" )
-
-        for filename in glob.glob( path ):
-            #~ print filename
-            path,name = os.path.split( filename )
-            name,ext = os.path.splitext( name )
-            if name == "__init__":
-                continue
-            package_list.append( name )
-        return package_list
-
-    def get_module_data( self, package_name, module_name ):
-        """Daten aus der pseudo Klasse 'module_info' holen"""
-        return __import__(
-            "%s.%s" % (package_name,module_name),
-            globals(), locals(),
-            ["module_info"]
-        ).module_info.data
-
+debug = False
+#~ debug = True
 
 class module_manager:
     def __init__( self, PyLucid ):
-        self.PyLucid    = PyLucid
-        self.session            = PyLucid["session"]
-        #~ self.session.debug()
-        self.log                = PyLucid["log"]
-        self.config             = PyLucid["config"]
-        self.page_msg           = PyLucid["page_msg"]
+        self.PyLucid        = PyLucid
+        self.page_msg       = PyLucid["page_msg"]
+        self.session        = PyLucid["session"]
+        self.CGIdata        = PyLucid["CGIdata"]
+        self.tools          = PyLucid["tools"]
+        self.parser         = PyLucid["parser"]
+        self.config         = PyLucid["config"]
 
-        self.modul_data = {}
+        self.CGI_dependency_checker = CGI_dependency_check( PyLucid )
+
+        self.data = {}
 
     def read_module_info( self, package_name ):
-        """Liest die Modul-Informationen aus dem >package_name< ein"""
+        for module_path in glob.glob( "%s/*.py" % package_name ):
+            filename = os.path.split( module_path )[1]
+            module_name = os.path.splitext( filename )[0]
+            self.data[module_name] = package_name
 
-        #~ print "Content-type: text/html\n"
-        #~ print "<pre>"
-
-        MyPackage_info = package_info()
-        module_list = MyPackage_info.get_package_names( package_name )
-
-        #~ self.page_msg( "Debug, ModulList: '%s'" % str(module_list) )
-
-        for module_name in module_list:
-
-            try:
-                module_data = MyPackage_info.get_module_data( package_name, module_name )
-            except Exception, e:
-                # Fehler beim import
-                if self.config.system.ModuleManager_import_error == True or \
-                self.session.has_key("isadmin") and self.session["isadmin"] == True:
-                    # Fehler nur anzeigen, wenn ein Administrator eingeloggt ist.
-                    self.page_msg( "ModulManager error with module '%s.%s':<br/> - %s" % (
-                            package_name,module_name,e
-                        )
-                    )
-                continue
-
-            for order,data in module_data.iteritems():
-                if self.modul_data.has_key( order ):
-                    # Fehler: Es dürfen keine zwei "order"-Kommandos existieren!
-                    print "Content-type: text/html\n"
-                    print "<h1>internal error!</h1>"
-                    print "<h3>duplicate module/plugin orders:</h3>"
-                    print "<p>duplicate order: '%s'<br/>" % order
-                    print "Modul 1: ./%s/%s.py<br/>" % (
-                        self.modul_data[order]["package_name"],
-                        self.modul_data[order]["module_name"]
-                    )
-                    print "Modul 2: ./%s/%s.py</p>" % ( package_name,module_name )
-                    sys.exit()
-
-                # Daten mit module_name und package_name erweitern
-                data["module_name"]  = module_name
-                data["package_name"] = package_name
-
-                # Daten speichern
-                self.modul_data[order] = data
-
-        # package_info()-Klasse komplett löschen
-        del( MyPackage_info )
-
-    #_________________________________________________________________________________
-    # Spezielle angepasste PyLucid Funktionen
-
-    def get_menu_data( self, section ):
-        """Liefert alle Daten zu einer Menu-Sektion"""
-        menu_data = {}
-
-        for order,data in self.modul_data.iteritems():
-            if data.has_key("section") and data["section"] == section:
-                menu_data[order] = data
-
-        return menu_data
-
-    def get_orders( self ):
-        """Informationen über alle URL Kommandos"""
-        order_data = {}
-
-        for order,data in self.modul_data.iteritems():
-            order_data[order] = data
-
-        return order_data
-
-    def get_lucidTags( self ):
-        """ Module die lucidTags bieten """
-        result = {}
-        for order,data in self.modul_data.iteritems():
-            if data.has_key("lucidTag"):
-                result[order] = data
-        return result
-
-    def get_lucidFunctions( self ):
-        """ Module die lucidFunktions sind """
-        result = {}
-        for order,data in self.modul_data.iteritems():
-            if data.has_key("lucidFunction"):
-                result[order] = data
-        return result
-
-    def start_module( self, module_data, function_string=None ):
+    def run_tag( self, tag ):
         """
-        Starten eines Dynamischen Modules
-        Wird benötigt für alle command-Befehle (aus der index.py) und
-        für z.B. das SiteMap
+        Ausführen von:
+        <lucidTag:'tag'/>
         """
-        def error( txt ):
-            return "<p>Modul '%s.%s' Error: %s</p>" % (
-                module_data['package_name'], module_data['module_name'], txt
+        if tag.find(".") != -1:
+            module_name, method_name = tag.split(".",1)
+        else:
+            module_name = tag
+            method_name = "lucidTag"
+
+        try:
+            return self._run_module_method( module_name, method_name )
+        except run_module_error, e:
+            self.page_msg( "run tag %s, error %s" % (tag,e) )
+            return str(e)
+
+    def run_function( self, function_name, function_info ):
+        """
+        Ausführen von:
+        <lucidFunction:'function_name'>'function_info'</lucidFunction>
+        """
+        module_name = function_name
+        method_name = "lucidFunction"
+
+        try:
+            return self._run_module_method( module_name, method_name, function_info )
+        except run_module_error, e:
+            self.page_msg( "Error", e )
+            return str(e)
+
+    def run_command( self ):
+        """
+        ein Kommando ausführen.
+        """
+        #~ print "OK2"
+        #~ sys.exit(2)
+        try:
+            command = self.CGIdata["command"]
+            action = self.CGIdata["action"]
+        except KeyError, e:
+            self.page_msg( "Error in command: KeyError", e )
+            return
+
+        if debug == True: self.page_msg( "Command: %s; action: %s" % (command, action) )
+
+        try:
+            return self._run_module_method( command, action )
+        except run_module_error, e:
+            self.page_msg( "Error run command:", e )
+
+
+    def _run_module_method( self, module_name, main_method, method_parameter=None ):
+        """
+        Führt eine Methode eines Module aus.
+        Kommt es irgendwo zu einem Fehler, ist es die selbsterstellte
+        "run_module_error"-Exception mit einer passenden Fehlermeldung.
+        """
+        #~ if (debug==True) and (not self.data.has_key( module_name )):
+            #~ self.page_msg( "module name %s unknown (method: %s)" % (module_name,main_method) )
+
+        try:
+            package_name = self.data[module_name]
+        except KeyError:
+            raise run_module_error(
+                "[module name '%s' unknown (method: %s)]" % ( module_name, main_method )
             )
 
-        # Rechteverwaltung 1: Muß der User eingeloggt sein? Ist er es?
-        try:
-            if (module_data['must_login'] == True) and (self.session.ID == False):
-                return error("Your not login!")
-        except KeyError:
-            return error("Info 'must_login' not defined!")
+        module              = self._get_module( package_name, module_name )
+        module_class        = self._get_module_class( module, module_name )
+        method_properties   = self._get_method_properties( module_name, module_class, main_method )
 
-        # Rechteverwaltung 2: Muß es ein Admin sein? Ist er es?
-        try:
-            if (module_data['must_admin']==True) and (self.session["isadmin"] == False):
-                return error("You must be an admin to use this module!")
-        except KeyError:
-            return error("Info 'must_admin' not defined!")
 
-        # Module wird importiert
-        module = __import__(
-            "%s.%s" % ( module_data['package_name'], module_data['module_name'] ),
-            globals(), locals(),
-            [ module_data['module_name'] ]
+        try:
+            self._check_rights( module_name, method_properties, module_class, main_method )
+        except run_module_error, e:
+            if method_properties.has_key( "no_rights_error" ) and \
+            (method_properties["no_rights_error"] == True):
+                return ""
+            else:
+                raise run_module_error( e )
+
+        current_method = self.CGI_dependency_checker.get_current_method(
+            module_name, method_properties, main_method, self.class_debug
         )
 
-        # Module/Aktion starten
-        if self.config.system.ModuleManager_error_handling == True:
-            # Fehler sollen abgefangen werden
-            try:
-                result_page_data = self.run_module( module, module_data, function_string )
-            except Exception, e:
-                return "Modul '%s.%s' Error: %s" % (
-                    module_data['package_name'], module_data['module_name'], e
+        class_instance  = self._make_class_instance( module_name, module_class )
+
+        if method_properties.has_key("direct_out"):
+            direct_out = method_properties["direct_out"]
+        else:
+            direct_out = False
+
+        self.put_data_to_module( module_name, class_instance )
+
+        result = self._run_method( module_name, class_instance, current_method, direct_out, method_parameter )
+
+        if method_properties.has_key("has_Tags") and method_properties["has_Tags"] == True:
+            result = self.parser.parse( result )
+
+        return result
+
+    def _get_module( self, package_name, module_name ):
+        """
+        Liefert das Modul als Objekt zurück
+        """
+        try:
+            return __import__(
+                "%s.%s" % (package_name, module_name),
+                globals(), locals(),
+                [module_name]
+            )
+        except Exception, e:
+            raise run_module_error(
+                "[Can't import Modul '%s': %s]" % ( module_name, e )
+            )
+
+    def _get_module_class( self, module, module_name ):
+        """
+        Liefert die Klasse im Module als Objekt zurück
+        """
+        try:
+            return getattr( module, module_name )
+        except Exception, e:
+            raise run_module_error(
+                "[Can't get class '%s' from module '%s': %s]" % ( module_name, module_name, e )
+            )
+
+    def _make_class_instance( self, module_name, module_class ):
+        """
+        Erstellt von der ungebundenen Klasse eine Instanz
+        """
+        try:
+            return module_class( self.PyLucid )
+        except Exception, e:
+            raise run_module_error(
+                "[Can't make instance from class %s: %s]" % (module_name, e)
+            )
+
+    def _get_method_properties( self, module_name, module_class, method ):
+        """
+        Liefert aus der Modul-Klasse die Module-Manager Einstellungen zurück
+        """
+        def check_type( module_name, data, info, method="" ):
+            if type(data) != dict:
+                raise run_module_error(
+                    "[Wrong %s data for module %s %s]" % (info, module_name, method)
+                )
+
+        try:
+            class_properties = getattr( module_class, "module_manager_data" )
+        except Exception, e:
+            raise run_module_error(
+                "Can't get module_manager_data from %s for method %s" % (module_name, method)
+            )
+
+        check_type( module_name, class_properties, "module_manager_data" )
+
+        if class_properties.has_key("debug"):
+            self.class_debug = class_properties["debug"]
+            if self.class_debug == True:
+                self.page_msg( "-"*30 )
+                self.page_msg(
+                    "Debug for %s.%s:" % (module_class, method)
                 )
         else:
-            # Fehler sollen zu einem CGI-Traceback führen ( cgitb.enable() )
-            result_page_data = self.run_module( module, module_data, function_string )
+            self.class_debug = False
 
-        # Letzte Aktion festhalten
-        self.session["last_action"] = module_data['module_name']
+        try:
+            method_properties = class_properties[method]
+        except Exception, e:
+            raise run_module_error(
+                "%s has no rights defined for method '%s' or CGI_dependent_actions faulty" % (module_name, method)
+            )
 
-        return result_page_data
+        check_type( module_name, method_properties, "module_manager_data", method )
 
-    def run_module( self, module, module_data, function_string=None ):
-        if (not module_data.has_key("direct_out")) or module_data["direct_out"] != True:
-            # Alle Printausgaben zwischenspeichern
-            self._redirect_stdout()
+        return method_properties
 
-        if function_string != None:
-            # Es ist eine lucidFunction mit einem "Parameter"
-            result_page_data = module.PyLucid_action( self.PyLucid, function_string )
+
+    def _check_rights( self, module_name, method_properties, module_class, method ):
+        """
+        Überprüft ob der aktuelle User das Modul überhaupt ausführen darf.
+        """
+        try:
+            must_login = method_properties["must_login"]
+        except Exception, e:
+            must_login = True
+            self.page_msg(
+                "must_login not defined (%s) in Module %s for method %s" % (e, module_name, method)
+            )
+
+        if must_login == True:
+            if self.session.ID == False:
+                    raise run_module_error(
+                        "[You must login to use %s for method %s]" % (module_name, method)
+                    )
+
+            try:
+                must_admin = method_properties["must_admin"]
+            except Exception, e:
+                must_admin = True
+                self.page_msg(
+                    "must_admin not defined (%s) in %s for method %s" % (e, module_name, method)
+                )
+
+            if (must_admin == True) and (self.session["isadmin"] == False):
+                raise run_module_error(
+                    "You must be an admin to use method %s from module %s!" % (method, module_name)
+                )
+
+    def put_data_to_module( self, module_name, class_instance ):
+        """
+        Daten (Link-URLs) in die Modul-Klasse "einfügen".
+        """
+        class_instance.link_url = "%s%s" % (
+            self.config.system.poormans_url, self.config.system.page_ident
+        )
+        class_instance.base_url = "%s?page_id=%s" % (
+            self.config.system.real_self_url, self.CGIdata["page_id"]
+        )
+        class_instance.command_url = "%s?page_id=%s&command=%s" % (
+            self.config.system.real_self_url, self.CGIdata["page_id"], module_name
+        )
+        class_instance.action_url = "%s?page_id=%s&command=%s&action=" % (
+            self.config.system.real_self_url, self.CGIdata["page_id"], module_name
+        )
+        # Zum automatischen erstellen eines Menüs:
+        class_instance.module_manager_build_menu = self.build_menu
+
+    def _run_method( self, module_name, class_instance, method, direct_out, method_parameter ):
+        def run( method_parameter ):
+            if method_parameter == None:
+                return unbound_method()
+            else:
+                return unbound_method( method_parameter )
+
+        # Methode aus Klasse erhalten
+        if self.config.system.ModuleManager_error_handling == True:
+            try:
+                unbound_method = getattr( class_instance, method )
+            except Exception, e:
+                raise run_module_error(
+                    "[Can't get method '%s' from module '%s': %s]" % ( method, module_name, e )
+                )
         else:
-            # Muß eine normale lucidTag oder Commando sein
-            result_page_data = module.PyLucid_action( self.PyLucid )
+            unbound_method = getattr( class_instance, method )
 
-        if (not module_data.has_key("direct_out")) or module_data["direct_out"] != True:
-            # Zwischengespeicherten print-Ausgaben abfragen
-            redirect_data = self._get_redirect_data()
-            if redirect_data != "":
-                # Es wurden prints gemacht
-                if result_page_data == None:
-                    # Das Modul lieferte keine eigentlichen Ausgaben zurück, somit
-                    # sind die print-Ausgaben die eigentlichen Daten
-                    result_page_data = redirect_data
-                else:
-                    # Es wurden Ausgaben zurück gegeben, dann sind die print-Ausgaben
-                    # wahrscheinlich nicht richtig, werden aber als page_msg angezeigt.
-                    self.page_msg( redirect_data )
+        if direct_out != True:
+            redirector = self.tools.redirector()
 
-        return result_page_data
+        # Methode "ausführen"
+        if self.config.system.ModuleManager_error_handling == True:
+            try:
+                direct_output = run( method_parameter )
+            except Exception, e:
+                if direct_out != True:
+                    redirector.get() # stdout wiederherstellen
+                raise run_module_error(
+                    "[Can't run method '%s' from module '%s': %s]" % ( method, module_name, e )
+                )
+        else:
+            direct_output = run( method_parameter )
 
-    def _redirect_stdout( self ):
+        if direct_out != True:
+            return redirector.get()
+        else:
+            return direct_output
+
+    #________________________________________________________________________________________
+
+    def build_menu( self, module_manager_data, action_url ):
         """
-        stdout und stderr mit dem redirector() zwischenspeichern
+        Generiert automatisch aus den module_manager_data ein "Action"-Menü.
+        Wird zur aufgerufenden Klasse übertragen.
         """
-        self.oldstdout = sys.stdout
-        self.oldstderr = sys.stderr
+        menu_data = {}
+        for method, data in module_manager_data.iteritems():
+            #~ self.page_msg( method, data )
+            try:
+                data = data["menu_info"]
+            except:
+                #~ self.page_msg( "No menu_info for %s" % method )
+                continue
 
-        sys.stdout = redirector()
-        sys.stderr = redirector()
+            try:
+                section     = data["section"]
+                description = data["description"]
+            except Exception, e:
+                self.page_msg( "Error in menu_info:", e )
+                continue
 
+            if not menu_data.has_key( section ):
+                menu_data[section] = []
 
-    def _get_redirect_data( self ):
-        """
-        liefert zwischengespeicherte Ausgaben zurück
-        """
-        # Ausgaben auf stderr aus redirector() abfragen
-        err = sys.stderr.get()
-        if (err != "") and (self.session.ID != False):
-            self.page_msg( "Module Error-Massage:", err )
+            menu_data[section].append(
+                [ method, description ]
+            )
 
-        # Original stderr wiederherstellen
-        sys.stderr = self.oldstderr
+        #~ self.page_msg( "Debug:", menu_data )
 
-        # Ausgaben auf stdout aus redirector() abfragen
-        out = sys.stdout.get()
+        print "<ul>"
+        for section, data in menu_data.iteritems():
+            print "\t<li><h5>%s</h5></li>" % section
+            print "\t<ul>"
+            for item in data:
+                print '\t\t<li><a href="%s%s">%s</a></li>' % (
+                    action_url, item[0], item[1]
+                )
+            print "\t</ul>"
+        print "</ul>"
 
-        # Original stdout wiederherstellen
-        sys.stdout = self.oldstdout
-
-        return out
-
-    def start_lucidFunction( self, matchobj ):
-        """
-        Starten einer lucidFunction
-        """
-        Modulename = matchobj.group(1)
-        function_string = matchobj.group(2)
-
-        return self.start_module( self.modul_data[ Modulename ], function_string )
-
-    #_________________________________________________________________________________
-    # Debugging
+    #________________________________________________________________________________________
 
     def debug( self ):
-        """Für Debugging Zwecke werden alle Daten angezeigt"""
-        self.page_msg( "Modul Manager Debug:" )
+        import inspect
         self.page_msg( "-"*30 )
-        for order,data in self.modul_data.iteritems():
-            self.page_msg( ">>>",order )
-            for k,v in data.iteritems():
-                self.page_msg( "%s - %s" % (k,v) )
-            self.page_msg( "-"*10 )
+        self.page_msg(
+            "ModuleManager Debug (from '...%s' line %s):" % (inspect.stack()[1][1][-20:], inspect.stack()[1][2])
+        )
+        for module_name, package_name  in self.data.iteritems():
+            self.page_msg( "%s.%s" % (package_name, module_name) )
         self.page_msg( "-"*30 )
 
 
-class redirector:
-    def __init__( self ):
-        self.data = ""
+class run_module_error(Exception):
+        pass
 
-    def write( self, *txt ):
-        self.data += " ".join([str(i) for i in txt])
 
-    def flush( self ):
-        return
 
-    def get( self ):
-        return self.data
+class CGI_dependency_check:
+    def __init__( self, PyLucid ):
+        self.CGIdata    = PyLucid["CGIdata"]
+        self.page_msg   = PyLucid["page_msg"]
 
-#~ if __name__ == "__main__":
-    #~ mm = module_manager()
-    #~ mm.parse_modules()
-    #~ mm.debug()
+    def get_current_method( self, module_name, method_properties, main_method, debug ):
+        """
+        Wertet CGI_dependent_actions in den method_properties aus.
+        """
+        self.module_name    = module_name
+        self.main_method    = main_method
+        self.debug          = debug
+
+        if not method_properties.has_key("CGI_dependent_actions"):
+            # Es gibt keine CGI-Daten abhängige Funktionen
+            if self.debug == True:
+                self.page_msg(
+                    "No CGI_dependent_actions found in %s %s" % (module_name, main_method)
+                )
+            return main_method
+
+        CGI_dependent_actions = method_properties["CGI_dependent_actions"]
+        if type( CGI_dependent_actions ) != dict:
+            raise run_module_error(
+                "[Error in CGI_dependent_actions Format for %s.%s]" % ( module_name, main_method )
+            )
+
+        for method,dependency in CGI_dependent_actions.iteritems():
+            if self.check_dependency( dependency, method ) == True:
+                # Eine Abhängige methode ist vorhanden
+                if self.debug == True:
+                    self.page_msg( "current method: %s" % method )
+                return method
+
+        if self.debug == True:
+            self.page_msg( "current method: %s" % main_method )
+        return main_method
+
+    def check_dependency( self, dependency, sub_method ):
+        """
+        CGI_dependent_actions
+        """
+        if self.debug == True: self.page_msg( "*** check sub_method %s:" % sub_method )
+
+        if type( dependency ) != dict:
+            self.page_msg(
+                "Error in CGI_dependent_actions. Modul %s method %s: statements is not from type dict." % (
+                    self.module_name, sub_method
+                )
+            )
+            return False
+
+        if not (dependency.has_key("CGI_laws") or dependency.has_key("CGI_must_have") ):
+            self.page_msg(
+                "Error in CGI_dependent_actions. Modul %s method %s: statements has no key CGI_laws or CGI_must_have" % (
+                    self.module_name, sub_method
+                )
+            )
+            return False
+
+        if dependency.has_key( "CGI_laws" ):
+            if self._check_CGI_laws( dependency["CGI_laws"] ) != True:
+                if self.debug == True: self.page_msg( "check_CGI_laws failt" )
+                return False
+            else:
+                if self.debug == True: self.page_msg( "CGI_laws OK" )
+        else:
+            if self.debug == True: self.page_msg( "no CGI_laws defined" )
+
+        if dependency.has_key( "CGI_must_have" ):
+            if not type( dependency["CGI_must_have"] ) in (list,tuple):
+                self.page_msg(
+                    "Error in CGI_dependent_actions. Modul %s method %s: CGI_must_have statements are not type list or tuple." % (
+                            self.module_name, sub_method
+                        )
+                    )
+                return False
+            if self._check_CGI_has_keys( dependency["CGI_must_have"] ) != True:
+                if self.debug == True: self.page_msg( "CGI_must_have failt" )
+                return False
+            else:
+                if self.debug == True: self.page_msg( "CGI_must_have OK" )
+        else:
+            if self.debug == True: self.page_msg( "no CGI_must_have defined" )
+
+        if self.debug == True: self.page_msg( "CGI_dependent_actions OK" )
+        return True
+
+    def _check_CGI_has_keys( self, keys ):
+        for key in keys:
+            if not self.CGIdata.has_key( key ):
+                if self.debug == True:
+                    self.page_msg( "Error: key %s not found in keys %s" % (key,keys) )
+                return False
+        return True
+
+    def _check_CGI_laws( self, CGI_laws ):
+        for key,value in CGI_laws.iteritems():
+
+            if not self.CGIdata.has_key( key ):
+                if self.debug == True:
+                    self.page_msg( "key %s not found in CGI_laws (%s)" % (key,CGI_laws) )
+                return False
+
+            if type( value ) == str:
+                if not self.CGIdata[key] == value:
+                    self.page_msg(
+                        "Error in CGIdata for %s: CGIdata key %s is not equal %s" % (
+                            self.module_name, key, value
+                        )
+                    )
+                    return False
+            elif value == int:
+                try:
+                    self.CGIdata[key] = int( self.CGIdata[key] )
+                except Exception, e:
+                    self.page_msg(
+                        "Error in CGIdata for %s: CGIdata key %s is not type int" % (
+                            self.module_name, key
+                        )
+                    )
+            else:
+                self.page_msg(
+                    "Error in CGI_dependent_actions for %s: The CGI_law type %s for key %s not supported" % (
+                        self.module_name, cgi.escape( str(value) ), key
+                    )
+                )
+                return False
+
+        return True
+
+
+
+
+
+

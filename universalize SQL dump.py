@@ -22,8 +22,9 @@ import os, sys, re, time, zipfile, zlib
 zlib.Z_DEFAULT_COMPRESSION = 9
 
 
-infilename      = "PyLucid_base_db1017233-jensDE.sql"
+infilename      = "20050916_PyLucid_base_db1017233-jensDE.sql"
 TablePrefix     = "PyLucid_base_"
+#~ TablePrefix     = "lucid_"
 
 # Diese Angaben müßen mit den in der install_PyLucid.py übereinstimmen!
 outfilename     = "PyLucid_SQL_install_data.zip"

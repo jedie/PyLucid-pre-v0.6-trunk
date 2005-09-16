@@ -59,18 +59,48 @@ v0.0.1
     - erste Release
 """
 
+import cgitb;cgitb.enable()
+
+from config import dbconf
 
 
-try:
-    import MySQLdb
-except ImportError, e:
+def error( msg, e ):
     print "Content-type: text/html\n"
     print "<h1>Error</h1>"
-    print "<h3>MySQLdb import error! Modul 'python-mysqldb' not installed???</h3>"
+    print "<h3>%s</h3>" % msg
     print "<p>Error Msg.:<br/>%s</p>" % e
-    print '<a href="http://sourceforge.net/projects/mysql-python/">MySQLdb project page</a>'
+
     import sys
     sys.exit(0)
+
+
+if dbconf.has_key( "dbTyp" ):
+    db_module = dbconf["dbTyp"]
+else:
+    db_module = "MySQLdb"
+
+
+
+
+if db_module == "MySQLdb":
+    try:
+        import MySQLdb as dbapi
+    except ImportError, e:
+        msg  = "MySQLdb import error! Modul"
+        msg += """ '<a href="http://sourceforge.net/projects/mysql-python/">python-mysqldb</a>' """
+        msg += "not installed???"""
+        error( msg, e )
+elif db_module == "sqlite":
+    try:
+        from pysqlite2 import dbapi2 as dbapi
+    except ImportError, e:
+        msg  = "pysqlite import error! Modul"
+        msg += """ '<a href="http://pysqlite.org">pysqlite-mysqldb</a>' """
+        msg += "not installed???"""
+        error( msg, e )
+else:
+    error( "Unknow DB-Modul (look at config.py!):", db_module )
+
 
 
 
@@ -80,8 +110,18 @@ class mySQL:
     Klasse, die nur allgemeine SQL-Funktionen beinhaltet
     """
     def __init__( self, *args, **kwargs ):
-        self.conn           = MySQLdb.connect( *args, **kwargs )
-        self.cursor         = self.conn.cursor( MySQLdb.cursors.DictCursor )
+        try:
+            if db_module == "MySQLdb":
+                self.conn   = dbapi.connect( *args, **kwargs )
+            elif db_module == "sqlite":
+                self.conn   = dbapi.connect( dbconf["dbDatabaseName"] )
+                print (dir( self.conn ) )
+            else:
+                raise "error ;("
+        except Exception, e:
+            error( "Can't connect to database!", e )
+
+        self.cursor         = self.conn.cursor( dbapi.cursors.DictCursor )
         self.tableprefix    = ""
 
         # Bei debug=True werden die SQL-Befehle aufgegeben
@@ -196,11 +236,8 @@ class mySQL:
 
             SQLcommand += where_string
 
-        if order != None:
-            SQLcommand += " ORDER BY %s %s" % order
-
-        if limit != None:
-            SQLcommand += " LIMIT %s,%s" % limit
+        if order != None:   SQLcommand += " ORDER BY %s %s" % order
+        if limit != None:   SQLcommand += " LIMIT %s,%s" % limit
 
         if self.debug:
             print "-"*80
@@ -346,11 +383,11 @@ if __name__ == "__main__":
     db.dump_select_result( result )
 
 
-    print "\n\nSee all values via SQL '*'-select:"
+    print "\n\nSee all values via SQL '*'-select and ordet it by 'id':"
     result = db.select(
             select_items    = "*",
             from_table      = "TestTable",
-            #~ where           = ("id",1)
+            order           = ("id","ASC"),
         )
     db.dump_select_result( result )
 

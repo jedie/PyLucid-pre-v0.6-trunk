@@ -15,7 +15,17 @@ function md5login() {
     if ( rnd=="" ) { alert("rnd from Server fail!"); return; }
 
     in_pass = document.getElementsByName("pass")[0].value;
-    if (in_pass.length<8) { alert("Password min len 8!"); return; }
+    if (in_pass.length<8) {
+        pass = document.getElementsByName("pass")[0].value.length;
+        pass1 = document.getElementsByName("md5pass1")[0].value.length;
+        pass2 = document.getElementsByName("md5pass2")[0].value.length;
+        if ( pass == 0 && pass1 == 32 && pass2 == 32 ) {
+            // Formular ist schon komplett ausgefüllt.
+            document.login.submit();
+            return;
+        }
+        alert("Password min len 8!"); return;
+    }
 
     pass1 = in_pass.slice(0, 4);
     pass2 = in_pass.slice(4, in_pass.length) + rnd;

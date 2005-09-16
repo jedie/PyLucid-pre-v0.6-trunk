@@ -3,9 +3,13 @@
 
 
 
-__version__ = "v0.0.4"
+__version__ = "v0.0.6"
 
 __history__ = """
+v0.0.6
+
+v0.0.5
+    - Fehlerabfrage bei convert_types() erweitert
 v0.0.4
     - detect_page() zur index.py verschoben
 v0.0.3
@@ -36,7 +40,7 @@ if config.system.page_msg_debug:
 #~ print "Content-type: text/html\n\n<pre>%s</pre>" % __file__
 #~ print "<pre>"
 
-
+import sys
 
 class CGIdata:
     """
@@ -51,6 +55,8 @@ class CGIdata:
         """
         self.page_msg   = PyLucid["page_msg"]
 
+        #~ self.page_msg( "TEST*****" )
+
         self.data = {} # Dict in dem die CGIdaten gespeichert werden
 
         self.get_CGIdata() # CGI-Daten ermitteln
@@ -58,16 +64,28 @@ class CGIdata:
         self.convert_types()
 
     def get_CGIdata( self ):
-        "sammelt POST und GET Daten zusammen"
-        # Normalerweise reicht ein cgi.FieldStorage( keep_blank_values=1 ) und die
-        # os.environ['QUERY_STRING'] Auswertung könnte man sich sparen. Aber das
-        # ganze funktioniert nicht mit Python v2.2.1 :( Also wird's doch umständlich
-        # gemacht ;)
+        """
+        sammelt POST und GET Daten zusammen
+        Er wird zuerst cgi.FieldStorage abgefragt und dann erst den QUERY_STRING, weil
+        cgi.FieldStorage automatisch ein urllib.unquote() durchführt, aber die Original
+        Daten gebraucht werden, die im QUERY_STRING noch drin stecken.
+        Das ist wichtig für Seitennamen mit "Sonderzeichen" wie "/" ;)
+
+        Normalerweise reicht ein cgi.FieldStorage( keep_blank_values=1 ) und die
+        os.environ['QUERY_STRING'] Auswertung könnte man sich sparen. Aber das
+        ganze funktioniert nicht mit Python v2.2.1 :( Also wird's doch umständlich
+        gemacht ;)
+        """
+
+        FieldStorageData = cgi.FieldStorage()
+
+        # POST Daten auswerten
+        for i in FieldStorageData.keys():
+            self.data[i] = FieldStorageData.getvalue(i)
+
         if os.environ.has_key('QUERY_STRING'):
-            query_string = urllib.unquote( os.environ['QUERY_STRING'] )
-            # print "<!-- %s -->" % os.environ['QUERY_STRING']
             # GET URL-Parameter parsen
-            for i in query_string.split("&"):
+            for i in os.environ['QUERY_STRING'].split("&"):
                 i=i.split("=")
                 if len(i)==1:
                     if i[0]!="":
@@ -75,17 +93,16 @@ class CGIdata:
                 else:
                     self.data[ i[0] ] = i[1]
 
-        FieldStorageData = cgi.FieldStorage()
-        # POST Daten auswerten
-        for i in FieldStorageData.keys():
-            #~ print "<!-- %s-%s -->" % (i,FieldStorageData.getvalue(i))
-            self.data[i] = FieldStorageData.getvalue(i)
+        #~ self.page_msg( self.data )
 
     def convert_types( self ):
+        """
+        Versucht Zahlen von str nach int zu convertieren
+        """
         for k,v in self.data.iteritems():
             try:
                 self.data[k] = int( v )
-            except ValueError:
+            except:
                 pass
 
     #______________________________________________________________________________
@@ -135,7 +152,7 @@ class CGIdata:
         # PyLucid's page_msg nutzen
         self.page_msg( "-"*30 )
         self.page_msg(
-            "CGIdata Debug (from '%s' line %s):" % (inspect.stack()[1][1][-20:], inspect.stack()[1][2])
+            "CGIdata Debug (from '...%s' line %s):" % (inspect.stack()[1][1][-20:], inspect.stack()[1][2])
         )
 
         self.page_msg( "-"*30 )
@@ -177,10 +194,12 @@ class page_msg:
     def __call__( self, *msg ):
         """ Fügt eine neue Zeile mit einer Nachricht hinzu """
         if config.system.page_msg_debug:
-            #~ for line in inspect.stack(): self.data += "%s<br/>" % str( line )
-            self.data += "...%s line %s: " % (inspect.stack()[1][1][-20:], inspect.stack()[1][2] )
+            # Angaben zur Datei, Zeilennummer, aus dem die Nachricht stammt
+            filename = inspect.stack()[1][1].split("/")[-1][-20:]
+            fileinfo = "%-20s line %3s: " % (filename, inspect.stack()[1][2] )
+            self.data += fileinfo.replace(" ","&nbsp;")
 
-        self.data += "%s <br/>" % " ".join( [str(i) for i in msg] )
+        self.data += "%s <br />\n" % " ".join( [str(i) for i in msg] )
 
     def write( self, *msg ):
         self.__call__( *msg )

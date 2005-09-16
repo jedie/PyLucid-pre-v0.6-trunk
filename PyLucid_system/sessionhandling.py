@@ -68,9 +68,13 @@ den Client geschickt worden sein! Ansonsten zählt der Cookie-Print nicht mehr z
 einfach nur angezeigt ;)
 """
 
-__version__ = "v0.0.6"
+__version__ = "v0.1.0"
 
 __history__ = """
+v0.1.0
+    - Großer Umbau: Diese Klasse ist nun nicht mehr allgemein Nutzbar, sondern an PyLucid
+        angepasst, da es die PyLucid-Objekte direkt benutzt.
+    - Umstellung bei den LOG-Ausgaben.
 v0.0.6
     - Optionales base64 encoding der Sessiondaten
     - PyLucid's page_msg wird bei debug() genutzt, wenn vorhanden
@@ -100,6 +104,10 @@ if base64format == True:
     import base64
 
 
+#~ debug = False
+#~ debug = True
+
+
 class sessionhandler:
     """
     CGI-Session Handler
@@ -109,16 +117,30 @@ class sessionhandler:
 
     http://www.python-forum.de/viewtopic.php?p=19523#19523
     """
-    def __init__ ( self, db_cursor, sql_tablename, log_fileobj, timeout_sec=1800, CookieName="session_id", verbose_log = False ):
+
+    session_data_must_keys = ("isadmin","user_id","user")
+
+    def __init__ ( self, PyLucid, page_msg_debug ):#db_cursor, sql_tablename, log_fileobj, timeout_sec=1800, CookieName="session_id", verbose_log = False ):
+        self.db             = PyLucid["db"]
+        self.log            = PyLucid["log"]
+        self.page_msg       = PyLucid["page_msg"]
+
+        self.page_msg_debug = page_msg_debug
+
+        self.sql_tablename  = "session_data"
+        self.CookieName     = "PyLucid_id"
+        self.timeout_sec    = 1800
+        self.verbose_log    = True
+
         self.Cookie         = SimpleCookie()
 
-        self.db_cursor      = db_cursor
-        self.log            = log_fileobj
+        #~ self.db_cursor      = db_cursor
+        #~ self.log            = log_fileobj
 
-        self.sql_tablename  = sql_tablename
-        self.timeout_sec    = timeout_sec
-        self.CookieName     = CookieName
-        self.verbose_log    = verbose_log
+        #~ self.sql_tablename  = sql_tablename
+        #~ self.timeout_sec    = timeout_sec
+        #~ self.CookieName     = CookieName
+        #~ self.verbose_log    = verbose_log
 
         self.set_default_values()
         self.detectSession()
@@ -140,23 +162,34 @@ class sessionhandler:
 
     def detectSession( self ):
         "Prüft ob eine Session schon besteht"
+        if self.page_msg_debug == True:
+            self.page_msg( "-"*30 )
+
         try:
             cookie_id = self.readCookie()
         except KeyError:
             # Es gibt kein Session-Cookie, also gibt es keine gültige Session
             self.deleteCookie()
-            if self.verbose_log==True:
-                self.log.write( "error;Cookie not in DB!" )
+            msg = "error;no client cookie found."
+            if self.verbose_log == True:    self.log.write( msg )
+            if self.page_msg_debug == True:
+                self.page_msg( msg )
+                self.page_msg( "-"*30 )
             return
 
         if cookie_id == "":
             self.status = "error;deleted Cookie found / Client not LogIn!"
+            if self.verbose_log==True: self.log.write( self.status )
             return
 
         if len( cookie_id ) != 32:
             # Mit dem Cookie stimmt wohl was nicht ;)
             self.deleteCookie()
-            self.log.write( "error;wrong Cookie len: %s !" % len( cookie_id ) )
+            msg = "error;wrong Cookie len: %s !" % len( cookie_id )
+            if self.verbose_log == True: self.log.write( msg )
+            if self.page_msg_debug == True:
+                self.page_msg( msg )
+                self.page_msg( "-"*30 )
             return
 
         try:
@@ -164,13 +197,33 @@ class sessionhandler:
         except Exception, e:
             # Es gibt keine Daten zur ID / Falsche Daten vorhanden
             self.deleteCookie()
-            self.log.write( "error;read_session for id '%s' error: %s" % (cookie_id,e) )
+            msg = "error;read_session for id '%s' error: %s" % (cookie_id,e)
+            if self.verbose_log == True: self.log.write( msg )
+            if self.page_msg_debug == True:
+                self.page_msg( msg )
+                self.page_msg( "-"*30 )
             return
+
+        for key in self.session_data_must_keys:
+            if not self.session_data.has_key( key ):
+                # Mit den Session-Daten stimmt was nicht :(
+                self.page_msg( "Error in Session Data: Key %s not exists." % key )
+                self.debug_session_data()
+                self.page_msg( "Your logged out!" )
+                self.delete_session()
+                self.page_msg( "-"*30 )
+                return
 
         # Aktualisiert Cookie
         self.writeCookie( self.ID )
-        if self.verbose_log==True:
-            self.log.write( "OK;found Session: %s" % self.ID )
+
+        msg = "OK;found Session: %s" % self.ID
+        if self.verbose_log == True:    self.log.write( msg )
+        if self.page_msg_debug == True:
+            self.page_msg( msg )
+            self.page_msg( "-"*30 )
+            #~ for k,v in self.session_data.iteritems():
+                #~ self.page_msg( "%s - %s" % (k,v) )
 
     def read_session_data( self, cookie_id ):
         "Liest Session-Daten zur angegebenen ID aus der DB"
@@ -184,9 +237,9 @@ class sessionhandler:
             )
 
         # Session ist OK
-
-        if self.verbose_log==True:
-            self.log.write( "OK;Session is OK" )
+        msg = "OK;Session is OK\nSession-Data %.2fSec old" % (time.time()-DB_data["timestamp"])
+        if self.verbose_log == True:    self.log.write( msg )
+        if self.page_msg_debug == True: self.page_msg( msg )
 
         self.ID                 = cookie_id
         self.client_IP          = current_IP
@@ -227,7 +280,7 @@ class sessionhandler:
         domain_name = getfqdn( IP )
         return IP, domain_name
 
-    ####################################################
+    #____________________________________________________________________________________________
     # Allgemeine Cookie-Funktionen
 
     def readCookie( self ):
@@ -247,7 +300,7 @@ class sessionhandler:
     def deleteCookie( self ):
         self.writeCookie( "" , 0)
 
-    ####################################################
+    #____________________________________________________________________________________________
     # Allgemeine SQL-Funktionen
 
     def insert_session( self, session_id ):
@@ -259,14 +312,17 @@ class sessionhandler:
             session_data = base64.b64encode( session_data )
         self.RAW_session_data_len = len( session_data )
 
-        SQLcommand  = " INSERT INTO %s" % self.sql_tablename
-        SQLcommand += " ( `session_id` , `timestamp` , `ip` , `domain_name` , `session_data` )"
-        SQLcommand += " VALUES (%s, %s, %s, %s, %s);"
-
-        self.db_cursor.execute(
-            SQLcommand,
-            ( session_id, time.time(), self.client_IP, self.client_domain_name, session_data )
+        self.db.insert(
+            table = self.sql_tablename,
+            data  = {
+                "session_id"    : session_id,
+                "timestamp"     : time.time(),
+                "ip"            : self.client_IP,
+                "domain_name"   : self.client_domain_name,
+                "session_data"  : session_data,
+            }
         )
+        #~ self.debug_session_data()
         self.log.write( "OK;created Session." )
 
     def update_session( self ):
@@ -279,27 +335,38 @@ class sessionhandler:
 
         self.RAW_session_data_len = len( session_data )
 
-        SQLcommand  = " UPDATE %s" % self.sql_tablename
-        SQLcommand += " SET session_data=%s, timestamp=%s"
-        SQLcommand += " WHERE session_id=%s"
-
-        self.db_cursor.execute(
-            SQLcommand,
-            ( session_data, time.time(), self.ID )
+        self.db.update(
+            table   = self.sql_tablename,
+            data    = {
+                "session_data"  : session_data,
+                "timestamp"     : time.time()
+            },
+            where   = ("session_id", self.ID),
+            limit   = 1,
         )
+
+        #~ self.debug_session_data()
+
         if self.verbose_log == True:
-            self.log.write( "OK;update Session." )
+            self.log.write( "OK;update Session: ID:%s" % self.ID )
 
     def read_from_DB( self, session_id ):
         "Liest Sessiondaten des Users mit der >session_id<"
         self.delete_old_sessions() # L�schen veralteter Sessions in der DB
 
-        SQLcommand  = " SELECT session_id, timestamp, ip, domain_name, session_data"
-        SQLcommand += " FROM %s" % self.sql_tablename
-        SQLcommand += " WHERE session_id=%s"
+        DB_data = self.db.select(
+                select_items    = ["session_id", "timestamp", "ip", "domain_name", "session_data"],
+                from_table      = self.sql_tablename,
+                where           = ("session_id",session_id)
+            )
+        #~ if DB_data == ():
 
-        self.db_cursor.execute( SQLcommand, (session_id,) )
-        DB_data = self.db_cursor.fetchall()[0]
+        if self.page_msg_debug == True:
+            self.page_msg( "DB_data:",DB_data )
+        #~ if len(DB_data) != 1:
+            #~ raise "More than one Session in DB!", len(DB_data)
+
+        DB_data = DB_data[0]
 
         self.RAW_session_data_len = len( DB_data["session_data"] )
 
@@ -312,13 +379,13 @@ class sessionhandler:
 
     def delete_old_sessions( self ):
         "Löscht veraltete Sessions in der DB"
-        SQLcommand  = "DELETE FROM %s" % self.sql_tablename
+        SQLcommand  = "DELETE FROM %s%s" % (self.db.tableprefix, self.sql_tablename)
         SQLcommand += " WHERE timestamp < %s"
 
         current_timeout = time.time() - self.timeout_sec
 
         try:
-            self.db_cursor.execute(
+            self.db.cursor.execute(
                 SQLcommand,
                 ( current_timeout, )
             )
@@ -326,6 +393,8 @@ class sessionhandler:
             print "Content-type: text/html\n"
             print "Delete Old Session error: %s" % e
             sys.exit()
+
+        #~ self.debug_session_data()
 
     def delete_session( self ):
         "Löscht die aktuelle Session"
@@ -335,11 +404,10 @@ class sessionhandler:
 
         self.deleteCookie()
 
-        SQLcommand  = "DELETE FROM %s" % self.sql_tablename
-        SQLcommand += " WHERE session_id=%s"
-
-        self.db_cursor.execute( SQLcommand, (self.ID,) )
-        self.db_cursor.fetchall()
+        self.db.delete(
+            table = self.sql_tablename,
+            where = ("session_id",self.ID)
+        )
 
         oldID = self.ID
 
@@ -348,7 +416,26 @@ class sessionhandler:
 
         self.status = "OK;delete Session data / LogOut for '%s'" % oldID
 
-    ####################################################
+    #____________________________________________________________________________________________
+
+    def debug_session_data( self ):
+        if self.verbose_log != True:
+            return
+
+        import inspect
+
+        try:
+            RAW_db_data = self.db.select(
+                select_items    = ["session_data"],
+                from_table      = self.sql_tablename,
+                where           = [("session_id",self.ID)]
+            )[0]["session_data"]
+            self.page_msg( "Debug from %s: %s" % (inspect.stack()[-2][4][0], RAW_db_data) )
+        except Exception, e:
+            self.page_msg( "Debug-Error from %s: %s" % (inspect.stack()[-2][4][0],e) )
+            #~ for i in inspect.stack(): self.page_msg( i )
+
+    #____________________________________________________________________________________________
     # Funktionen zum abfragen/setzten der Session-Daten
 
     def __setitem__( self, key, value):
@@ -373,7 +460,6 @@ class sessionhandler:
 
     def debug( self ):
         "Zeigt alle Session Informationen an"
-        self.debugging = True # Damit
         try:
             import inspect
             # PyLucid's page_msg nutzen

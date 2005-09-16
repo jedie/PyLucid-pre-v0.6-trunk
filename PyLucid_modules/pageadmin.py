@@ -10,9 +10,13 @@ Alles was mit dem ändern von Inhalten zu tun hat:
 
 __author__ = "Jens Diemer (www.jensdiemer.de)"
 
-__version__="0.0.7"
+__version__="0.1.0"
 
 __history__="""
+v0.1.0
+    - NEU: Das löschen von Seiten geht nun auch ;)
+    - Anpassung an neuen Module-Manager
+    - Beim erstellen einer neuen Seite, wird direkt zu dieser "hingesprungen"
 v0.0.7
     - "must_admin" für Module-Manager definiert
     - Nutzt Zeitumwandlung aus PyLucid["tools"]
@@ -38,125 +42,47 @@ das Archiv nicht mehr angezeigt :(
 # Python-Basis Module einbinden
 import sys, cgi, time, pickle
 
-# Interne PyLucid-Module einbinden
-import config
-
-
-
-# Für Debug-print-Ausgaben
-#~ print "Content-type: text/html\n\n<pre>%s</pre>" % __file__
-#~ print "<pre>"
 
 
 
 
 
-
-#_______________________________________________________________________
-# Module-Manager Daten für den page_editor
-
-
-class module_info:
-    """Pseudo Klasse: Daten für den Module-Manager"""
-    data = {
-        "edit_page" : {
-            "txt_menu"      : "edit page",
-            "txt_long"      : "edit the current page",
-            "section"       : "front menu",
-            "must_login"    : True,
-            "must_admin"    : False,
-            "get_page_id"   : True,
-        },
-        "new_page" : {
-            "txt_menu"      : "new page",
-            "txt_long"      : "make a new page here",
-            "section"       : "front menu",
-            "must_login"    : True,
-            "must_admin"    : True,
-            "get_page_id"   : True,
-        },
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-#_______________________________________________________________________
-
-
-
-class parent_tree:
-    """
-    Generiert eine Auswahlliste aller Seiten
-    Wird beim editieren für die parent-Seiten-Auswahl benötigt
-    """
-    def __init__( self, db ):
-        self.db = db
-
-    def make_parent_option( self ):
-        # Daten aus der DB holen
-        SQLcommand  = "SELECT id, name, parent"#, position"
-        SQLcommand += " FROM $tableprefix$pages"
-        SQLcommand += " ORDER BY position ASC"
-
-        data = self.db.get( SQLcommand )
-
-        # Daten umformen
-        tmp = {}
-        for line in data:
-            parent  = line["parent"]
-            id_name = ( line["id"], line["name"] )
-            if tmp.has_key( line["parent"] ):
-                tmp[parent].append( id_name )
-            else:
-                tmp[parent] = [ id_name ]
-
-        self.tree = [ (0, "_| root") ]
-        self.build( tmp, tmp.keys() )
-        return self.tree
-
-    def build( self, tmp, keys, parent=0, deep=1 ):
-        "Bildet aus den Aufbereiteten Daten"
-        if not tmp.has_key( parent ):
-            # Seite hat keine Unterseiten
-            return deep-1
-
-        for id, name in tmp[parent]:
-            # Aktuelle Seite vermerken
-            self.tree.append( (id, "%s| %s" % ("_"*(deep*3),name) ) )
-            #~ print "_"*(deep*3) + name
-            deep = self.build( tmp, keys, id, deep+1 )
-
-        return deep-1
-
-#~ if __name__ == "__main__":
-    #~ testdaten = {
-        #~ 0: [(1, "eins"), (13, "zwei"), (9, "drei")],
-        #~ 13: [(14, "zwei 1"), (15, "zwei 2")],
-        #~ 14: [(16, "zwei 2 drunter")]
-    #~ }
-    #~ pt = parent_tree("")
-    #~ pt.tree = []
-    #~ pt.build( testdaten, testdaten.keys() )
-    #~ for id,name in pt.tree:
-        #~ print "%2s - %s" % (id,name)
-    #~ sys.exit()
-
-
-#_______________________________________________________________________
-
-
-class page_editor:
+class pageadmin:
     """
     Editieren einer CMS-Seite mit Preview und Archivierung
     """
+
+    module_manager_data = {
+        "edit_page" : {
+            "must_login"    : True,
+            "must_admin"    : False,
+            #~ "get_page_id"   : True,
+        },
+        "new_page" : {
+            "must_login"    : True,
+            "must_admin"    : True,
+            #~ "get_page_id"   : True,
+        },
+        "del_page" : {
+            "must_login"    : True,
+            "must_admin"    : True,
+            "CGI_dependent_actions" : {
+                "delete_page"        : {
+                    "CGI_laws"      : { "action":"del_page" },
+                    "CGI_must_have" : ("side_id_to_del",)
+                },
+            }
+        },
+        "preview" : {
+            "must_login"    : True,
+            "must_admin"    : False,
+        },
+        "save" : {
+            "must_login"    : True,
+            "must_admin"    : False,
+        },
+    }
+
     def __init__( self, PyLucid ):
         self.PyLucid    = PyLucid
 
@@ -171,33 +97,11 @@ class page_editor:
         self.page_msg       = PyLucid["page_msg"]
         self.preferences    = PyLucid["preferences"]
         self.tools          = PyLucid["tools"]
-
-    def action( self ):
-        #~ self.CGIdata.debug()
-        if self.CGIdata.has_key( 'Submit' ):
-            if self.CGIdata["Submit"] == "preview":
-                self.session["last_action"] = "preview edit page"
-                return self.preview_page()
-            elif self.CGIdata["Submit"] == "save":
-                self.session["last_action"] = "save edit page"
-                return self.save_page()
-            elif self.CGIdata["Submit"] == "encode from DB":
-                return self.edit_page( encode_from_db=True )
-            else:
-                return "<h1>Error!</h1>Command: '%s' unknow! Please check internal page content!" % self.CGIdata["Submit"]
-        elif self.CGIdata.has_key( 'command' ):
-            if self.CGIdata["command"] == "edit_page":
-                return self.edit_page()
-            elif self.CGIdata["command"] == "new_page":
-                return "<h3>make new page</h3>" + self.new_page()
-
-        return "<h1>command error</h1>"
+        self.parser         = PyLucid["parser"]
+        self.render         = self.PyLucid["render"]
 
     def new_page( self ):
         "Neue Seite soll angelegt werden"
-
-        if self.session["isadmin"] != 1:
-            return "<h1>Error: You can't create a new Side. You not an admin.</h1>"
 
         core = self.preferences["core"]
 
@@ -221,10 +125,13 @@ class page_editor:
         # Damit man bei self.save() noch weiß, das es eine neue Seite ist ;)
         self.session["make_new_page"] = 1
 
-        return self.editor_page( page_data )
+        self.editor_page( page_data )
 
     def get_page_data( self, page_id ):
-        "Liefert alle Daten die zum editieren einer Seite notwendig sind zurück"
+        """
+        Liefert alle Daten die zum editieren einer Seite notwendig sind zurück
+        wird auch von self.archive_page() verwendet
+        """
         return self.db.page_items_by_id(
                 item_list   = ["parent", "name", "title", "template", "style",
                                 "markup", "content", "keywords", "description",
@@ -251,7 +158,7 @@ class page_editor:
             except Exception, e:
                 status_msg = "<h3>%s</h3>" % e
 
-        return self.editor_page( page_data, status_msg )
+        self.editor_page( page_data, status_msg )
 
     def editor_page( self, edit_page_data, status_msg="" ):
         #~ print "Content-type: text/html\n\n<pre>"
@@ -280,8 +187,7 @@ class page_editor:
         encoding_option = MyOptionMaker.build_from_list( ["utf8","iso-8859-1"], "utf8" )
         markup_option   = MyOptionMaker.build_from_list( self.config.available_markups, edit_page_data["markup"] )
 
-        parent_option = parent_tree( self.db ).make_parent_option()
-        parent_option = MyOptionMaker.build_from_list( parent_option, int( edit_page_data["parent"] ) )
+        parent_option = self.tools.forms().SideOptionList( select=int( edit_page_data["parent"] ) )
 
 
         def make_option( table_name, select_item ):
@@ -307,40 +213,34 @@ class page_editor:
             edit_page_data["content"] = ""
 
         #~ edit_page_data["content"] += "\n\n" + str( edit_page_data )
-        form_url = "%s?command=edit_page&page_id=%s" % ( self.config.system.real_self_url, self.CGIdata["page_id"] )
+        #~ form_url = "%s?command=pageadmin&page_id=%s" % ( self.config.system.real_self_url, self.CGIdata["page_id"] )
 
         try:
-            content = ""
-            if self.session["isadmin"] != 1:
-                content += "<strong>You can not edit this page! You have no permissions!</strong>"
-
-            content += internal_page["content"] % {
-                        "status_msg"                : status_msg, # Nachricht beim encodieren
-                        # Textfelder
-                        "url"                       : form_url,
-                        "summary"                   : edit_page_data["summary"],
-                        "name"                      : edit_page_data["name"],
-                        "title"                     : edit_page_data["title"],
-                        "keywords"                  : edit_page_data["keywords"],
-                        "description"               : edit_page_data["description"],
-                        "content"                   : cgi.escape( edit_page_data["content"] ),
-                        # Checkboxen
-                        "showlinks"                 : showlinks,
-                        "permitViewPublic"          : permitViewPublic,
-                        # List-Optionen
-                        "encoding_option"           : encoding_option,
-                        "markup_option"             : markup_option,
-                        "parent_option"             : parent_option,
-                        "template_option"           : template_option,
-                        "style_option"              : style_option,
-                        "ownerID_option"            : ownerID_option,
-                        "permitEditGroupID_option"  : permitEditGroupID_option,
-                        "permitViewGroupID_option"  : permitViewGroupID_option,
-                    }
+            print internal_page["content"] % {
+                "status_msg"                : status_msg, # Nachricht beim encodieren
+                # Textfelder
+                "url"                       : self.command_url,
+                "summary"                   : edit_page_data["summary"],
+                "name"                      : cgi.escape( edit_page_data["name"] ),
+                "title"                     : cgi.escape( edit_page_data["title"] ),
+                "keywords"                  : edit_page_data["keywords"],
+                "description"               : edit_page_data["description"],
+                "content"                   : cgi.escape( edit_page_data["content"] ),
+                # Checkboxen
+                "showlinks"                 : showlinks,
+                "permitViewPublic"          : permitViewPublic,
+                # List-Optionen
+                "encoding_option"           : encoding_option,
+                "markup_option"             : markup_option,
+                "parent_option"             : parent_option,
+                "template_option"           : template_option,
+                "style_option"              : style_option,
+                "ownerID_option"            : ownerID_option,
+                "permitEditGroupID_option"  : permitEditGroupID_option,
+                "permitViewGroupID_option"  : permitViewGroupID_option,
+            }
         except KeyError, e:
-            return "<h1>generate internal Page fail:</h1><h4>KeyError:'%s'</h4>" % e
-
-        return content
+            print "<h1>generate internal Page fail:</h1><h4>KeyError:'%s'</h4>" % e
 
     def set_default( self, dictionary ):
         """
@@ -355,10 +255,7 @@ class page_editor:
                 dictionary[key] = ""
         return dictionary
 
-    #~ def encode_from_db( self ):
-        #~ "Hohlt die Daten nochmals aus der "
-
-    def preview_page( self ):
+    def preview( self ):
         "Preview einer editierten Seite"
         #~ self.CGIdata.debug()
 
@@ -370,22 +267,22 @@ class page_editor:
         edit_page_data["parent"] = int( edit_page_data["parent"] )
 
         # Preview der Seite erstellen
-        content = "\n<h3>edit preview:</h3>\n"
-        content += '<div id="page_edit_preview">\n'
-        from PyLucid_system import pagerender
-        pagerender = pagerender.pagerender( self.PyLucid )
-        content += pagerender.apply_markup( edit_page_data["content"], edit_page_data["markup"] )
-        content += "\n</div>\n"
+        print "\n<h3>edit preview:</h3>\n"
+        print '<div id="page_edit_preview">\n'
+
+        # Möchte der rendere gern wissen ;)
+        edit_page_data['lastupdatetime'] = "now"
+
+        # Alle Tags ausfüllen und Markup anwenden
+        print self.render.render( edit_page_data )
+
+        print "\n</div>\n"
 
         # Formular der Seite zum ändern wieder dranhängen
-        content += self.editor_page( edit_page_data )
+        self.editor_page( edit_page_data )
 
-        return content
-
-    def save_page( self ):
+    def save( self ):
         "Abspeichern einer editierten Seite"
-        if self.session["isadmin"] != 1:
-            return "<strong>You can not edit this page! You have no permissions!</strong>"
 
         # CGI-Daten holen und leere Form-Felder "einfügen"
         new_page_data = self.set_default( self.CGIdata )
@@ -455,7 +352,20 @@ class page_editor:
                     )
                 del( self.session["make_new_page"] )
             except Exception, e:
-                return "<h3>Error to insert new side:'%s'</h3><p>Use browser back botton!</p>" % e
+                print "<h3>Error to insert new side:'%s'</h3><p>Use browser back botton!</p>" % e
+
+            # Setzt die aktuelle Seite auf die neu erstellte. Das herrausfinden der ID ist
+            # nicht ganz so einfach, weil Seitennamen doppelt vorkommen können. Allerdings
+            # ist es doch sehr unwahrscheinlich das auch "lastupdatetime" doppelt ist...
+            # Na, und wenn schon, dann wird halt die erste genommen ;)
+            self.CGIdata["page_id"] = self.db.select(
+                select_items    = ["id"],
+                from_table      = "pages",
+                where           = [
+                    ("name",new_page_data["name"]),
+                    ("lastupdatetime",new_page_data["lastupdatetime"])
+                ]
+            )[0]["id"]
 
             self.page_msg( "New side saved." )
         else:
@@ -468,19 +378,107 @@ class page_editor:
                         limit   = 1
                     )
             except Exception, e:
-                return "<h3>Error to update side data: '%s'</h3>" % e
+                print "<h3>Error to update side data: '%s'</h3>" % e
 
             self.page_msg( "New side data updated." )
 
+    #_______________________________________________________________________
+
+    def del_page( self ):
+        """
+        Auswahl welche Seite gelöscht werden soll
+        """
+        internal_page = self.db.get_internal_page("del_page")['content']
+
+        print internal_page % {
+            "url"         : self.command_url,
+            "side_option" : self.tools.forms().SideOptionList( with_id = True, select = self.CGIdata["page_id"] )
+        }
 
 
-#_______________________________________________________________________
-# Allgemeine Funktion, um die Aktion zu starten
+    def delete_page( self ):
+        """
+        Löscht die Seite, die ausgewählt wurde
+        """
+        side_id_to_del = self.CGIdata["side_id_to_del"]
+        try:
+            comment = self.CGIdata["comment"]
+        except KeyError:
+            comment = ""
 
-def PyLucid_action( PyLucid ):
-    # Aktion starten
-    return page_editor( PyLucid ).action()
+        # Hat die Seite noch Unterseiten?
+        parents = self.db.select(
+                select_items    = ["name"],
+                from_table      = "pages",
+                where           = [ ("parent",side_id_to_del) ]
+            )
+        if parents != ():
+            # Hat noch Unterseiten
+            msg = "Can't delete Page!"
+            self.page_msg( msg )
+            print "<h3>%s</h3>" % msg
+            print "Page has parent pages:"
+            print "<ul>"
+            for side in parents:
+                print "<li>%s</li>" % cgi.escape( side["name"] )
+            print "</ul>"
+            print "Please move parents."
+            # "Menü" wieder anzeigen
+            self.del_page()
+            return
 
+        try:
+            self.archive_page( side_id_to_del, "delete page", comment )
+        except Exception, e:
+            self.page_msg( "Delete page error:" )
+            self.page_msg( "Can't archive side with ID %s: %s" % (side_id_to_del, e) )
+            return False
+
+        if self.CGIdata["page_id"] == side_id_to_del:
+            # Die aktuelle Seite wird gelöscht, also kann sie nicht mehr angezeigt werden.
+            # Deswegen gehen wir halt zu parent Seite ;)
+            self.CGIdata["page_id"] = self.db.parentID_by_id( side_id_to_del )
+            if self.CGIdata["page_id"] == 0:
+                # Die oberste Ebene hat ID 0, obwohl es evtl. keine Seite gibt, die ID 0 hat :(
+                # Da nehmen wir doch lieber die default-Seite...
+                self.CGIdata["page_id"] = self.preferences["core"]["defaultPageName"]
+
+        start_time = time.time()
+        self.db.delete(
+            table = "pages",
+            where = ("id",side_id_to_del),
+            limit=1
+        )
+        duration_time = time.time()-start_time
+        self.page_msg(
+            "Side with ID %s deleted in %.2fsec." % ( side_id_to_del, duration_time )
+        )
+
+        # "Menü" wieder anzeigen
+        self.del_page()
+
+    #_______________________________________________________________________
+
+    def archive_page( self, page_id, type, comment ):
+        """
+        Archiviert die Seite mit der ID >page_id<
+        Keine Fehlerabfrage, ob Seiten-ID richtig ist!
+        """
+        start_time = time.time()
+        self.db.insert(
+            table = "archive",
+            data = {
+                "userID"    : self.session["user_id"],
+                "type"      : type,
+                "date"      : self.tools.convert_time_to_sql( time.time() ),
+                "comment"   : comment,
+                "content"   : pickle.dumps( self.get_page_data( page_id ) )
+            }
+        )
+        duration_time = time.time()-start_time
+        self.page_msg(
+            "Archived side in %.2fsec." % duration_time
+        )
 
 
 

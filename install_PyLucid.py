@@ -7,9 +7,12 @@ Evtl. muß der Pfad in dem sich PyLucid's "config.py" sich befindet
 per Hand angepasst werden!
 """
 
-__version__ = "v0.0.8"
+__version__ = "v0.1.0"
 
 __history__ = """
+v0.1.0
+    - NEU: "partially re-initialisation DB tables" damit kann man nur ausgesuhte
+        Tabellen mit den Defaultwerten überschrieben.
 v0.0.8
     - Fehler in SQL_dump(): Zeigte SQL-Befehle nur an, anstatt sie auszuführen :(
 v0.0.7
@@ -145,8 +148,9 @@ HTML_head = """<?xml version="1.0" encoding="UTF-8"?>
 
 class SQL_dump:
 
-    re_create_table = re.compile( r"(?ims)(CREATE TABLE.*?;)" )
-    re_insert_value = re.compile( r"(?ims)(INSERT INTO.*?;)\n" )
+    re_all_create_tables    = re.compile( r"(?is)(CREATE TABLE.*?;)" )
+    re_all_table_names      = re.compile( r"(?is)CREATE TABLE `(.*?)`" )
+    re_all_inserts          = re.compile( r"(?is)(INSERT INTO.*?;)\n" )
 
     def __init__( self, db ):
         self.db = db
@@ -175,19 +179,77 @@ class SQL_dump:
 
     def import_dump( self ):
         print "<pre>"
-        create_tables = self.re_create_table.findall( self.data )
-        create_tables = [self._complete_prefix(i) for i in create_tables]
+        create_tables = self.table_commands()
         count = self.execute_SQL_list( create_tables )
         print count, "Tables created."
         print
 
-        insert_values = self.re_insert_value.findall( self.data )
-        insert_values = [self._complete_prefix(i) for i in insert_values]
+        insert_values = self.insert_commands()
         count = self.execute_SQL_list( insert_values )
         print count, "items insert."
 
+    def table_commands( self ):
+        create_tables = self.re_all_create_tables.findall( self.data )
+        create_tables = [self._complete_prefix(i) for i in create_tables]
+        return create_tables
+
+    def insert_commands( self ):
+        insert_values = self.re_all_inserts.findall( self.data )
+        insert_values = [self._complete_prefix(i) for i in insert_values]
+        return insert_values
+
+    def insert_dict( self ):
+        result = {}
+        re_filter = "(?is)INSERT INTO `(.*?)`"
+        for command in self.insert_commands():
+            tablename = re.findall( re_filter, command )[0]
+            if not result.has_key( tablename ):
+                result[tablename] = []
+            result[tablename].append( command )
+        return result
+
+    def get_table_names( self ):
+        create_tables = self.table_commands()
+        table_names = []
+        for table in create_tables:
+            table_names.append( self.re_all_table_names.findall( table )[0] )
+        table_names.sort()
+        return table_names
+
     def _complete_prefix( self, line ):
         return line % { "table_prefix" : config.dbconf["dbTablePrefix"] }
+
+    def install_tables( self, table_names ):
+        """ Installiert nur die Tabellen mit angegebenen Namen """
+        insert_dict = self.insert_dict()
+
+        print "<pre>"
+        create_tables = self.table_commands()
+        for command in create_tables:
+            current_table = self.re_all_table_names.findall( command )[0]
+            if current_table in table_names:
+                print "re-initialisation DB table '%s':" % current_table
+                print " - Drop table"
+                self.execute( "DROP TABLE `%s`;" % current_table )
+                print " - Create table"
+                self.execute( command )
+
+                print " - Insert values in table %s" % current_table
+                try:
+                    insert_commands = insert_dict[current_table]
+                except KeyError, e:
+                    print "   No insert's for %s" % current_table
+                else:
+                    count = self.execute_SQL_list( insert_commands )
+                    print "   %s rows insert." % count
+
+                table_names.remove( current_table )
+                print
+
+        if table_names != []:
+            print "Error, Tables remaining:"
+            print table_names
+        print "</pre>"
 
     def dump_data( self ):
         print "<h2>SQL Dump data:</h2>"
@@ -219,13 +281,24 @@ class PyLucid_setup:
 
         self.CGIdata = sessiondata.CGIdata( {"page_msg":""} )
 
+        if self.CGIdata.has_key( "action" ):
+            action = self.CGIdata["action"]
+            try:
+                unbound_method = getattr( self, action ) # Die Methode in dieser Klasse holen
+            except AttributeError, e:
+                print e
+                sys.exit()
+            unbound_method() # Methode "starten"
+            sys.exit()
+
         #~ print "<p>CGI-data debug: '%s'</p>" % self.CGIdata
 
         self.actions = [
                 (self.install_PyLucid,  "install",              "Install PyLucid from scratch"),
                 (self.add_admin,        "add_admin",            "add a admin user"),
-                (self.default_internals,"default_internals",    "set all internal pages to default"),
-                (self.convert_db,       "convert_db",           "convert DB data from PHP-LucidCMS to PyLucid Format"),
+                (self.re_init,          "re_init",              "partially re-initialisation DB tables"),
+                #~ (self.default_internals,"default_internals",    "set all internal pages to default"),
+                #~ (self.convert_db,       "convert_db",           "convert DB data from PHP-LucidCMS to PyLucid Format"),
                 #~ (self.sql_dump,         "sql_dump",             "SQL dump (experimental)"),
                 #~ (self.convert_locals,   "locals",               "convert locals (ony preview!)"),
             ]
@@ -279,7 +352,42 @@ class PyLucid_setup:
         d.import_dump()
         #~ d.dump_data()
 
+    #__________________________________________________________________________________________
 
+    def re_init( self ):
+        print "<h3>partially re-initialisation DB tables</h3>"
+        self.print_backlink()
+        d = SQL_dump( self.db )
+
+        print '<form action="?action=re_init_tables" method="post">'
+        print '<p>Which tables reset to defaults:</p>'
+
+        for name in d.get_table_names():
+            print '<input type="checkbox" name="table" value="%s">%s<br />' % (name,name)
+
+        print "<h4>WARNING: The specified tables lost all Data!</h4>"
+        print '<button type="submit">submit</button>'
+        print '</form>'
+
+    def re_init_tables( self ):
+        print "<h3>partially re-initialisation DB tables</h3>"
+        self.print_backlink()
+
+        d = SQL_dump( self.db )
+        try:
+            table_names = self.CGIdata['table']
+        except KeyError:
+            print "<h3>No Tables to reset?!?!</h3>"
+            self.print_backlink()
+            sys.exit()
+
+        if type(table_names) == str:
+            # Nur eine Tabelle wurde ausgewählt
+            table_names = [ table_names ]
+
+        d.install_tables( table_names )
+
+        self.print_backlink()
 
     #__________________________________________________________________________________________
 

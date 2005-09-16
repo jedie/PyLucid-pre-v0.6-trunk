@@ -5,7 +5,7 @@ __author__  = "Jens Diemer (www.jensdiemer.de)"
 __license__ = "GNU General Public License (GPL)"
 __url__     = "http://www.PyLucid.org"
 
-__info__ = """<a href="%s" title="PyLucid - A OpenSource CMS in pure Python CGI by Jens Diemer">PyLucid</a> v0.3.3""" % __url__
+__info__ = """<a href="%s" title="PyLucid - A OpenSource CMS in pure Python CGI by Jens Diemer">PyLucid</a> v0.4.0""" % __url__
 
 """
 Rendert eine komplette Seite
@@ -41,9 +41,14 @@ Klasse werden Informationen über das Module/Plugin festgehalten, die vom
 Module-Manager eingelesen werden und PyLucid zur ferfügung gestellt werden.
 """
 
-__version__="0.2.15"
+__version__="0.3.1"
 
 __history__="""
+v0.3.1
+    - Backports: Es wird nur der Pfad geändert, wenn Python älter als v2.4 ist. Damit werden erst die
+        Backports gefunden und importiert ;)
+v0.3.0
+    - Großer umbau: Anpassung an neuen Modul-Manager und page_parser.py
 v0.2.15
     - Die Umstellung mit check_user_agent() ist doch nicht so einfach gewesen und brauchte
         einige andere Änderungen :(
@@ -116,53 +121,43 @@ rendern:
     per print rausgeschrieben werden.
 """
 
-
-
-
 # Als erstes Mal die Zeit stoppen ;)
 import time
 start_time = time.time()
 
+
 import cgitb;cgitb.enable()
 
+
+
 # Python-Basis Module einbinden
-import os, sys, urllib
+import os, sys, urllib, cgi
 
 
 #~ print "Content-type: text/html; charset=utf-8\r\n\r\nDEBUG:"
-#~ sys.exit()
 
-#~ print sys.version
+
 if not sys.version.startswith("2.4"):
-    # Für alle Versionen von Python vor 2.4 werden die Backports importiert
-    from PyLucid_python_backports.utils import *
+    # Damit werden erst die "backports" gefunden, wenn Python älter als v2.4 ist
+    sys.path.insert( 0, "PyLucid_python_backports" )
 
 
 # Interne PyLucid-Module einbinden
 import config # PyLucid Konfiguration
-from PyLucid_system import SQL, sessiondata, sessionhandling
-from PyLucid_system import userhandling, SQL_logging, pagerender
-from PyLucid_system import module_manager, tools, preferences
+from PyLucid_system import SQL
+from PyLucid_system import sessiondata
+from PyLucid_system import sessionhandling
+from PyLucid_system import SQL_logging
+from PyLucid_system import userhandling
+from PyLucid_system import module_manager
+from PyLucid_system import tools
+from PyLucid_system import preferences
+from PyLucid_system import page_parser
 
 # Versions-Information übertragen
-pagerender.__info__     = __info__
 preferences.__info__    = __info__
 
 
-## Dynamisch geladene Module:
-## urllib2 -> LucidRender.lucidFunction_IncludeRemote()
-
-
-
-#~ import cgi
-
-#~ cgi.print_arguments()
-#~ cgi.print_directory()
-#~ cgi.print_environ()
-#~ cgi.print_environ_usage()
-#~ cgi.print_exception()
-
-#~ print "Content-type: text/html\n"
 
 save_max_history_entries = 10
 
@@ -215,14 +210,8 @@ class LucidRender:
         self.PyLucid["log"] = self.log
 
         # Allgemeiner CGI Sessionhandler auf mySQL-Basis
-        self.session        = sessionhandling.sessionhandler(
-            self.db.cursor,
-            "%ssession_data" % self.config.dbconf["dbTablePrefix"],
-            self.log,
-            CookieName="PyLucid_id",
-            #~ verbose_log = True
-        )
-        self.session.page_msg = self.page_msg
+        self.session        = sessionhandling.sessionhandler( self.PyLucid, page_msg_debug=False )
+        #~ self.session        = sessionhandling.sessionhandler( self.PyLucid, page_msg_debug=True )
         #~ self.session.debug()
         self.PyLucid["session"] = self.session
 
@@ -236,15 +225,40 @@ class LucidRender:
         # Überprüfe Rechte der Seite
         self.verify_page()
 
+        self.parser = page_parser.parser( self.PyLucid )
+        self.PyLucid["parser"] = self.parser
+
         # Verwaltung von erweiterungs Modulen/Plugins
         self.module_manager = module_manager.module_manager( self.PyLucid )
         # Alle Module, die für den Modul-Manager vorbereitet wurden einlesen
         self.module_manager.read_module_info( "PyLucid_modules" )
+        self.module_manager.read_module_info( "PyLucid_plugins" )
         #~ self.module_manager.debug()
         self.PyLucid["module_manager"] = self.module_manager
 
-        # Zum Zusammenbau der HTML-Seiten
-        self.pagerender     = pagerender.pagerender( self.PyLucid )
+        self.setup_parser()
+
+        self.render = page_parser.render( self.PyLucid )
+        self.PyLucid["render"] = self.render
+
+    def setup_parser( self ):
+        """
+        Den page_parser Einrichten
+        """
+        # Der ModulManager, wird erst nach dem Parser instanziert. Damit aber der Parser
+        # auf ihn zugreifen kann, packen wir ihn einfach dorthin ;)
+        self.parser.module_manager = self.module_manager
+
+        # "Statische" Tag's definieren
+        self.parser.tag_data["powered_by"]  = __info__
+        if self.session.has_key("user"):
+            self.parser.tag_data["script_login"] = '<a href="%s?page_id=%s&command=auth&action=logout">logout [%s]</a>' % (
+                self.config.system.real_self_url, self.CGIdata["page_id"], self.session["user"]
+            )
+        else:
+            self.parser.tag_data["script_login"] = '<a href="%s?page_id=%s&command=auth&action=login">login</a>' % (
+                self.config.system.real_self_url, self.CGIdata["page_id"]
+            )
 
     #_____________________________________________________________________________________________________
 
@@ -402,18 +416,25 @@ class LucidRender:
 
         if self.CGIdata.has_key("command"):
             # Ein Kommando soll ausgeführt werden
-            module_content = self.command( self.CGIdata["command"] )
+            module_content = self.module_manager.run_command()
+            #~ self.page_msg( "X%sX" % module_content )
         else:
             module_content = None
 
         # Information der Seite aus DB holen
+        # Wird erst gemacht, nachdem ein Kommando ausgeführt wird, weil evtl.
+        # das Kommando die aktuelle Seite geändert hat (z.B. edit_page)
         try:
             side_data = self.db.get_side_data( self.CGIdata["page_id"] )
         except IndexError, e:
-            self.error( "Can get Page: %s" % e, "page_id: %s" % self.CGIdata["page_id"] )
+            self.page_msg( "Can get Page: %s" % e, "page_id: %s" % self.CGIdata["page_id"] )
+            self.set_default_page()
+            try:
+                side_data = self.db.get_side_data( self.CGIdata["page_id"] )
+            except IndexError, e:
+                self.error( "Can get Page: %s" % e, "page_id: %s" % self.CGIdata["page_id"] )
 
-        if module_content != None:
-            #~ self.page_msg( "module_content:",module_content )
+        if (module_content != None) and (module_content != ""):
             # Das Modul selber hat eine Seite erzeugt, die Angezeigt werden soll
             if type( module_content ) == tuple:
                 side_data["content"]    = module_content[0]
@@ -423,46 +444,25 @@ class LucidRender:
                 side_data["content"]    = module_content
                 side_data["markup"]     = "none"
 
+        page_parser.__info__    = __info__
+        page_parser.start_time  = start_time
+
+        #~ self.page_msg( "Debug, markup:", side_data["markup"] )
+
+        # Alle Tags ausfüllen und Markup anwenden
+        side_content = self.render.render( side_data )
+        # Alle Tags im Template ausfüllen und dabei die Seite in Template einbauen
+        page = self.render.apply_template( side_content, side_data["template"] )
+
         if self.session.ID != False:
             # User ist eingeloggt -> Es werden Informationen gespeichert.
             self.save_page_history()
 
-        #~ self.page_msg( "Markup:",side_data["markup"] )
-        return self.build_side( side_data )
-
-
-    def build_side( self, side_data ):
-
-        # Parsen des SeitenInhalt, der Aufgerufenen Seite
-        main_content = self.pagerender.lucidTag_page_body( side_data )
-
-        #~ self.page_msg( main_content )
-
-        if type(main_content) != str:
-            # Mit dem Inhalt stimmt was nicht!
-            main_content = "<h1>Internal contenttyp error (not String)!</h1><br/>Content:<hr/>" + str( main_content )
-
-            # Einblenden des Admin-Menü's
-            main_content = self.pagerender.admin_menu() + main_content
-
-        # Parsen das Templates
-        template = self.pagerender.replace_lucidTags( side_data["template"], side_data )
-
-        #############################
-        ## Die Arbeit ist erledigt ;)
-        #############################
-
-        # Sessiondaten in die Datenbank schreiben
-        self.session.update_session()
+            # Sessiondaten in die Datenbank schreiben
+            self.session.update_session()
 
         # Datenbank verbindung beenden
         self.db.close()
-
-        # SeitenInhalt in Template einfügen
-        try:
-            page = template.replace( "<lucidTag:page_body/>", main_content )
-        except Exception, e:
-            page = "Page Content Error: '%s'<hr>content:<br />%s" % (e, main_content)
 
         ## gesammelte Seiten-Nachrichten einblenden
         # s. sessiondata.page_msg()
@@ -492,15 +492,20 @@ class LucidRender:
         """
         Speichert in session["page_history"] die ID's der besuchten Seiten
         """
-        try:
+        if not self.session.has_key("page_history"):
+            # Noch keinen History vorhanden (User gerad erst eingeloggt)
+            self.session["page_history"] = [ self.CGIdata["page_id"] ]
+            return
+
+        if self.session["page_history"][0] == self.CGIdata["page_id"]:
+            # Ist noch die selbe Seite -> wird nicht abgespeichert
+            return
+        else:
             # History kürzen
             self.session["page_history"] = self.session["page_history"][:save_max_history_entries]
 
             # Fügt die aktuelle Seite am Anfang der Liste ein
             self.session["page_history"].insert( 0, self.CGIdata["page_id"] )
-        except KeyError:
-            # Noch keinen History vorhanden (User gerad erst eingeloggt)
-            self.session["page_history"] = [ self.CGIdata["page_id"] ]
 
 
     #_____________________________________________________________________________________________________
@@ -547,6 +552,8 @@ class LucidRender:
         page_ident = self.config.system.page_ident.replace("?","")
         page_ident = page_ident.replace("=","")
         if self.CGIdata.has_key( page_ident ):
+            #~ self.CGIdata.debug()
+            #~ self.page_msg( cgi.escape( self.CGIdata[page_ident] ) )
             self.check_page_name( self.CGIdata[page_ident] )
             return
 
@@ -563,32 +570,38 @@ class LucidRender:
 
     def check_page_id( self, page_id ):
         """ Testet ob die page_id auch richtig ist """
-        db_page_id = self.db.select(
+        try:
+            db_page_id = self.db.select(
                 select_items    = ["id"],
                 from_table      = "pages",
                 where           = ("id",page_id)
             )[0]["id"]
-        if db_page_id != page_id:
-            self.page_msg( "Page with id '%s' unknow." % page_id )
-            self.set_default_page()
+        except IndexError:
+            pass
+        else:
+            if db_page_id == page_id:
+                # Alles OK
+                return
+
+        self.page_msg( "404 Not Found. Page with id '%s' unknown." % page_id )
+        self.set_default_page()
 
     def check_page_name( self, page_name ):
         """ ermittelt anhand des page_name die page_id """
-        #~ self.page_msg( "Debug: check_page_name( '%s' )" % page_name )
 
-        page_name = urllib.unquote( page_name )
-        self.CGIdata["REQUEST_URI"] = page_name
+        # Aufteilen: /bsp/ -> ['','%3ClucidTag%3ABsp%2F%3E','']
+        page_name_split = page_name.split("/")
+
+        # unquote + Leere Einträge löschen: ['','%3ClucidTag%3ABsp%2F%3E',''] -> ['<lucidTag:Bsp/>']
+        page_name_split = [urllib.unquote_plus(i) for i in page_name_split if i!=""]
+
+        #~ page_name = urllib.unquote(  )
+        #~ self.CGIdata["REQUEST_URI"] = urllib.unquote_plus(page_name)
 
         if page_name == "/" or page_name == "":
             # Index Seite wurde aufgerufen. Zumindest bei poor-modrewrite
             self.set_default_page()
             return
-
-        # Aufteilen: /bsp/ -> ['','bsp','']
-        page_name_split = page_name.split("/")
-
-        # Leere Einträge löschen: ['','bsp',''] -> ['bsp']
-        page_name_split = [i for i in page_name_split if i!=""]
 
         page_id = 0
         for name in page_name_split:
@@ -666,23 +679,7 @@ class LucidRender:
         self.set_default_page()
 
 
-    #_____________________________________________________________________________________________________
 
-
-    def command( self, order ):
-        """ Behandelt alle URL-"command="-Parameter """
-        #~ self.CGIdata.debug()
-        self.log( "Special PyLuid command: '%s'" % order )
-        #~ self.page_msg( "Debug - command: '%s'" % order )
-
-        # "Kommando"-Daten aus dem Module-Manager holen
-        order_data = self.module_manager.get_orders()
-
-        if order in order_data:
-            # Der aktuelle URL-command existiert und wird ausgeführt
-            return self.module_manager.start_module( order_data[order] )
-        else:
-            return "<h1>ERROR!</h1><br/>Command unknow!"
 
 
 

@@ -7,9 +7,12 @@
 Anbindung an die SQL-Datenbank
 """
 
-__version__="0.0.6"
+__version__="0.0.7"
 
 __history__="""
+v0.0.7
+    - order=("name","ASC") bei internal_page-, style- und template-Liste eingef√ºgt
+    - get_page_link_by_id() funktioniert auch mit Sonderzeichen im Link
 v0.0.6
     - Fehlerausgabe ge√§ndert
     - Fehlerausgabe bei side_template_by_id() wenn Template nicht existiert.
@@ -27,6 +30,7 @@ v0.0.1
     - erste Release
 """
 
+import urllib
 
 # Interne PyLucid-Module einbinden
 from mySQL import mySQL
@@ -46,22 +50,22 @@ class db( mySQL ):
         #~ import inspect
         #~ for line in inspect.stack(): print line,"<br>"
 
-        try:
+        #~ try:
             # SQL connection aufbauen
-            mySQL.__init__( self,
-                    host    = dbconf["dbHost"],
-                    user    = dbconf["dbUserName"],
-                    passwd  = dbconf["dbPassword"],
-                    db      = dbconf["dbDatabaseName"],
-                    #~ unicode = 'utf-8'
-                    #~ use_unicode = True
-                )
-        except Exception, e:
-            print "Content-type: text/html\n"
-            print "<h1>PyLucid - Error</h1>"
-            print "<h2>Can't connect to SQL-DB: '%s'</h2>" % e
-            import sys
-            sys.exit()
+        mySQL.__init__( self,
+                host    = dbconf["dbHost"],
+                user    = dbconf["dbUserName"],
+                passwd  = dbconf["dbPassword"],
+                db      = dbconf["dbDatabaseName"],
+                #~ unicode = 'utf-8'
+                #~ use_unicode = True
+            )
+        #~ except Exception, e:
+            #~ print "Content-type: text/html\n"
+            #~ print "<h1>PyLucid - Error</h1>"
+            #~ print "<h2>Can't connect to SQL-DB: '%s'</h2>" % e
+            #~ import sys
+            #~ sys.exit()
 
         # Table-Prefix for all SQL-commands:
         self.tableprefix = dbconf["dbTablePrefix"]
@@ -165,13 +169,23 @@ class db( mySQL ):
 
     def parentID_by_name( self, page_name ):
         """
-        liefert die parend ID anhand des Namens zurÌ§´
+        liefert die parend ID anhand des Namens zur√ºck
         """
         # Anhand des Seitennamens wird die aktuelle SeitenID und den ParentID ermittelt
         return self.select(
-                select_items    = ["id","parent"],
+                select_items    = ["parent"],
                 from_table      = "pages",
                 where           = ("name",page_name)
+            )[0]["parent"]
+
+    def parentID_by_id( self, page_id ):
+        """
+        Die parent ID zur >page_id<
+        """
+        return self.select(
+                select_items    = ["parent"],
+                from_table      = "pages",
+                where           = ("id",page_id)
             )[0]["parent"]
 
     def side_title_by_id( self, page_id ):
@@ -244,6 +258,8 @@ class db( mySQL ):
         # Liste umdrehen
         data.reverse()
 
+        data = [urllib.quote_plus(i) for i in data]
+
         return "/" + "/".join(data)
 
     def get_sitemap_data( self ):
@@ -262,6 +278,7 @@ class db( mySQL ):
         return self.select(
                 select_items    = ["id","name","description"],
                 from_table      = "styles",
+                order           = ("name","ASC"),
             )
 
     def get_style_data( self, style_id ):
@@ -303,6 +320,7 @@ class db( mySQL ):
         return self.select(
                 select_items    = ["id","name","description"],
                 from_table      = "templates",
+                order           = ("name","ASC"),
             )
 
     def get_template_data( self, template_id ):
@@ -347,14 +365,20 @@ class db( mySQL ):
         return self.select(
                 select_items    = ["name","description","markup"],
                 from_table      = "pages_internal",
+                order           = ("name","ASC"),
             )
 
     def get_internal_page_data( self, internal_page_name ):
-        return self.select(
-                select_items    = ["markup","content","description"],
-                from_table      = "pages_internal",
-                where           = ("name", internal_page_name)
-            )[0]
+        try:
+            return self.select(
+                    select_items    = ["markup","content","description"],
+                    from_table      = "pages_internal",
+                    where           = ("name", internal_page_name)
+                )[0]
+        except Exception, e:
+            self.page_msg(
+                "Error get internal page '%s': %s" % (internal_page_name, e)
+            )
 
     def update_internal_page( self, internal_page_name, page_data ):
         self.update(
