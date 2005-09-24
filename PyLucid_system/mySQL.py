@@ -104,28 +104,46 @@ else:
 
 
 
+#~ from pysqlite2 import dbapi2 as sqlite
+
+#~ def dict_factory(cursor, row):
+    #~ d = {}
+    #~ for idx, col in enumerate(cursor.description):
+        #~ d[col[0]] = row[idx]
+    #~ return d
+
+#~ class DictCursor(dbapi.Cursor):
+    #~ def __init__(self, *args, **kwargs):
+        #~ dbapi.Cursor.__init__(self, *args, **kwargs)
+        #~ self.row_factory = dict_factory
+
+
+
+
+
 
 class mySQL:
     """
     Klasse, die nur allgemeine SQL-Funktionen beinhaltet
     """
     def __init__( self, *args, **kwargs ):
+        self.tableprefix    = ""
+
+        # Bei debug=True werden die SQL-Befehle aufgegeben
+        self.debug          = False
+
         try:
             if db_module == "MySQLdb":
                 self.conn   = dbapi.connect( *args, **kwargs )
+                self.cursor = self.conn.cursor( dbapi.cursors.DictCursor )
             elif db_module == "sqlite":
                 self.conn   = dbapi.connect( dbconf["dbDatabaseName"] )
-                print (dir( self.conn ) )
+                self.cursor = self.conn.cursor(factory=DictCursor)
             else:
                 raise "error ;("
         except Exception, e:
             error( "Can't connect to database!", e )
 
-        self.cursor         = self.conn.cursor( dbapi.cursors.DictCursor )
-        self.tableprefix    = ""
-
-        # Bei debug=True werden die SQL-Befehle aufgegeben
-        self.debug          = False
 
     def get( self, SQLcommand, SQL_values = () ):
         """kombiniert execute und fetchall mit Tabellennamenplatzhalter"""

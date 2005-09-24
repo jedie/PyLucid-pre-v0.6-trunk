@@ -9,9 +9,15 @@ Module Manager
 
 """
 
-__version__="0.1.0"
+__version__="0.1.2"
 
 __history__="""
+v0.1.2
+    - Ein paar mehr debug Ausgaben
+    - CGI_dependency Methoden können nun anderen Einstellungen ("direct_out", "apply_markup" usw.) haben,
+        diese werden nun berücksichtigt
+v0.1.1
+    - Module können nun auch Seiten produzieren, die noch durch einen Parser laufen sollen.
 v0.1.0
     - Komplett neu Programmiert!
 v0.0.8
@@ -52,8 +58,9 @@ class module_manager:
         self.session        = PyLucid["session"]
         self.CGIdata        = PyLucid["CGIdata"]
         self.tools          = PyLucid["tools"]
-        self.parser         = PyLucid["parser"]
         self.config         = PyLucid["config"]
+        self.parser         = PyLucid["parser"]
+        self.render         = PyLucid["render"]
 
         self.CGI_dependency_checker = CGI_dependency_check( PyLucid )
 
@@ -79,7 +86,7 @@ class module_manager:
         try:
             return self._run_module_method( module_name, method_name )
         except run_module_error, e:
-            self.page_msg( "run tag %s, error %s" % (tag,e) )
+            self.page_msg( "run tag %s, error '%s'" % (tag,e) )
             return str(e)
 
     def run_function( self, function_name, function_info ):
@@ -137,6 +144,17 @@ class module_manager:
         module_class        = self._get_module_class( module, module_name )
         method_properties   = self._get_method_properties( module_name, module_class, main_method )
 
+        current_method = self.CGI_dependency_checker.get_current_method(
+            module_name, method_properties, main_method, self.class_debug
+        )
+        if current_method != main_method:
+            # Nach den CGI_dependency soll eine andere Methode soll ausgeführt werden
+            # Die aktuelle Methode kann aber andere Einstellung für "direct_out", "apply_markup" usw. haben
+            # deswegen aktualisieren wir die method_properties
+            method_properties = self._get_CGI_dependency_properties( method_properties, current_method )
+
+        if self.class_debug == True:
+            self.page_msg( "current method_properties:", method_properties )
 
         try:
             self._check_rights( module_name, method_properties, module_class, main_method )
@@ -147,9 +165,6 @@ class module_manager:
             else:
                 raise run_module_error( e )
 
-        current_method = self.CGI_dependency_checker.get_current_method(
-            module_name, method_properties, main_method, self.class_debug
-        )
 
         class_instance  = self._make_class_instance( module_name, module_class )
 
@@ -158,14 +173,13 @@ class module_manager:
         else:
             direct_out = False
 
-        self.put_data_to_module( module_name, class_instance )
+        self.put_data_to_module( module_name, class_instance, current_method )
 
-        result = self._run_method( module_name, class_instance, current_method, direct_out, method_parameter )
+        return self._run_method(
+            module_name, class_instance, current_method, direct_out, method_parameter, method_properties
+        )
 
-        if method_properties.has_key("has_Tags") and method_properties["has_Tags"] == True:
-            result = self.parser.parse( result )
 
-        return result
 
     def _get_module( self, package_name, module_name ):
         """
@@ -245,6 +259,28 @@ class module_manager:
         return method_properties
 
 
+    def _get_CGI_dependency_properties( self, method_properties, current_method ):
+        """
+        Modifiziert die method_properties, mit Werten aus den CGI_dependent_actions der
+        Aktuellen Methode.
+        """
+        def transfer_values( dict1, dict2, key_filter ):
+            """
+            Überträgt alle key/values von dict1 nach dict2, außer
+            die keys aus der key_filter-Liste
+            """
+            for k,v in dict1.iteritems():
+                if k in key_filter:
+                    continue
+                dict2[k] = v
+            return dict2
+
+        current_properties = method_properties["CGI_dependent_actions"][current_method]
+        method_properties = transfer_values( current_properties, method_properties, ("CGI_laws", "CGI_must_have") )
+
+        return method_properties
+
+
     def _check_rights( self, module_name, method_properties, module_class, method ):
         """
         Überprüft ob der aktuelle User das Modul überhaupt ausführen darf.
@@ -259,9 +295,9 @@ class module_manager:
 
         if must_login == True:
             if self.session.ID == False:
-                    raise run_module_error(
-                        "[You must login to use %s for method %s]" % (module_name, method)
-                    )
+                raise run_module_error(
+                    "[You must login to use %s for method %s]" % (module_name, method)
+                )
 
             try:
                 must_admin = method_properties["must_admin"]
@@ -276,7 +312,7 @@ class module_manager:
                     "You must be an admin to use method %s from module %s!" % (method, module_name)
                 )
 
-    def put_data_to_module( self, module_name, class_instance ):
+    def put_data_to_module( self, module_name, class_instance, current_method ):
         """
         Daten (Link-URLs) in die Modul-Klasse "einfügen".
         """
@@ -292,10 +328,17 @@ class module_manager:
         class_instance.action_url = "%s?page_id=%s&command=%s&action=" % (
             self.config.system.real_self_url, self.CGIdata["page_id"], module_name
         )
+        class_instance.current_action_url = "%s?page_id=%s&command=%s&action=%s" % (
+            self.config.system.real_self_url, self.CGIdata["page_id"], module_name, current_method
+        )
         # Zum automatischen erstellen eines Menüs:
         class_instance.module_manager_build_menu = self.build_menu
 
-    def _run_method( self, module_name, class_instance, method, direct_out, method_parameter ):
+    def _run_method( self, module_name, class_instance, method, direct_out, method_parameter, method_properties ):
+        """
+        Startet die Methode und verarbeitet die Ausgaben
+        """
+
         def run( method_parameter ):
             if method_parameter == None:
                 return unbound_method()
@@ -314,6 +357,8 @@ class module_manager:
             unbound_method = getattr( class_instance, method )
 
         if direct_out != True:
+            # Alle print Ausgaben werden abgefangen und zwischengespeichert um diese in
+            # die CMS Seite einbaunen zu können
             redirector = self.tools.redirector()
 
         # Methode "ausführen"
@@ -329,10 +374,44 @@ class module_manager:
         else:
             direct_output = run( method_parameter )
 
-        if direct_out != True:
-            return redirector.get()
-        else:
+        ##________________________________________________________________________________________
+        ## Ausgaben verarbeiten
+
+        if direct_out == True:
+            # Das Modul kann direkte Ausgaben zum Browser machen (setzten von Cookies ect.)
+            # Es kann aber auch Ausgaben zurückschicken die Angezeigt werden sollen (Login-Form)
             return direct_output
+
+        # Zwischengespeicherte print Ausgaben zurückliefern
+        redirect_out = redirector.get()
+
+        if type( direct_output ) == dict:
+            try:
+                content = direct_output["content"]
+                markup  = direct_output["markup"]
+            except KeyError, e:
+                if self.class_debug:
+                    self.page_msg( "Module-return is type dict, but there is no Key '%s'?!?" % e )
+                result = str( direct_output )
+            else:
+                if self.class_debug == True: self.page_msg( "Apply markup '%s'." % markup )
+
+                # Evtl. vorhandene stdout Ausgaben mit verarbeiten
+                content = redirect_out + content
+
+                # Markup anwenden
+                direct_output = self.render.apply_markup( content, markup )
+        elif direct_output == None:
+            # Das Modul hat keine return-Daten, also wird es print Ausgaben gemacht haben,
+            # diese werden weiterverarbeitet
+            direct_output = redirect_out
+
+        if method_properties.has_key("has_Tags") and method_properties["has_Tags"] == True:
+            # Die Ausgaben des Modules haben Tags, die aufgelöst werden sollen.
+            if self.class_debug == True: self.page_msg( "Parse Tags." )
+            return self.parser.parse( direct_output )
+
+        return direct_output
 
     #________________________________________________________________________________________
 
@@ -412,7 +491,7 @@ class CGI_dependency_check:
             # Es gibt keine CGI-Daten abhängige Funktionen
             if self.debug == True:
                 self.page_msg(
-                    "No CGI_dependent_actions found in %s %s" % (module_name, main_method)
+                    "Info: No CGI_dependent_actions found in %s %s" % (module_name, main_method)
                 )
             return main_method
 
@@ -501,11 +580,12 @@ class CGI_dependency_check:
 
             if type( value ) == str:
                 if not self.CGIdata[key] == value:
-                    self.page_msg(
-                        "Error in CGIdata for %s: CGIdata key %s is not equal %s" % (
-                            self.module_name, key, value
+                    if self.debug == True:
+                        self.page_msg(
+                            "Error in CGIdata for %s: CGIdata key %s is not equal %s" % (
+                                self.module_name, key, value
+                            )
                         )
-                    )
                     return False
             elif value == int:
                 try:

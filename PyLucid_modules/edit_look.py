@@ -51,7 +51,6 @@ class edit_look:
         #~ "debug" : True,
         "debug" : False,
 
-        "edit_style_link"           : global_rights,
         "edit_style" : {
             "must_login"    : True,
             "must_admin"    : True,
@@ -73,7 +72,6 @@ class edit_look:
             }
         },
 
-        "edit_template_link"           : global_rights,
         "edit_template": {
             "must_login"    : True,
             "must_admin"    : True,
@@ -95,7 +93,6 @@ class edit_look:
             }
         },
 
-        "edit_internal_page_link"   : global_rights,
         "edit_internal_page" : {
             "must_login"    : True,
             "must_admin"    : True,
@@ -120,9 +117,6 @@ class edit_look:
 
     #_______________________________________________________________________
     ## Stylesheet
-
-    def edit_style_link( self ):
-        print '<a href="%sedit_style">edit stylesheets</a>' % self.action_url
 
     def edit_style( self ):
         self.edit_style_select_page()
@@ -188,10 +182,6 @@ class edit_look:
 
     #_______________________________________________________________________
     ## Template
-
-    def edit_template_link( self ):
-        print '<a href="%sedit_template">edit templates</a>' % self.action_url
-        return
 
     def edit_template( self ):
         self.edit_template_select_page()
@@ -312,9 +302,6 @@ class edit_look:
 
     #_______________________________________________________________________
     ## Interne Seiten editieren
-
-    def edit_internal_page_link( self ):
-        print '<a href="%sedit_internal_page">edit internal page</a>' % self.action_url
 
     def edit_internal_page( self ):
         """ Tabelle zum auswählen einer Internen-Seite zum editieren """

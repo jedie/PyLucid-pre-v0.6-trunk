@@ -237,7 +237,7 @@ class html_option_maker:
             else:
                 selected = ""
 
-            result += '<option value="%s"%s>%s</option>\n' % (
+            result += '\t<option value="%s"%s>%s</option>\n' % (
                 cgi.escape( str(value) ), selected, cgi.escape( str(txt) )
             )
 
@@ -391,6 +391,7 @@ class subprocess2(threading.Thread):
         #~ else:
             #~ # Process mußte beendet werden
             #~ self.killed = True
+
 
 
 #________________________________________________________________________________________________

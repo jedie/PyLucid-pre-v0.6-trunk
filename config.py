@@ -44,11 +44,12 @@ class system:
     page_msg_debug = False
     #~ page_msg_debug = True
 
-    # Fehlerabfrage bei Module/Plugins über den Module-Manager
+    # Fehlerabfrage bei Module/Plugins über den Module-Manager, sowie bei den
+    # Markup Parsern
     # =False -> Fehler in einem Modul führen zu einem CGI-Traceback ( cgitb.enable() )
     # =True  -> Fehler in einem Modul werden in einem Satz zusammen gefasst
-    #~ ModuleManager_error_handling = True
-    ModuleManager_error_handling = False
+    ModuleManager_error_handling = True
+    #~ ModuleManager_error_handling = False
 
     # Fehlerabfrage beim importieren von Modulen im Module-Manager
     # =True  -> Import-Fehler werden immer angezeigt
@@ -77,6 +78,7 @@ class system:
     # Wird gesetzt sobald es erforderlich ist.
     # Ist die ID der Usergruppe "PyLucid_internal"
     # Damit sind die Internen Seiten in der DB makiert
+    # Keine änderung nötig
     internal_group_id = -1
 
     script_filename = os.environ['SCRIPT_FILENAME']
@@ -124,32 +126,10 @@ dbconf = {
     "dbTablePrefix"     : 'lucid_',
     "dbdatetime_format" : '%Y-%m-%d %H:%M:%S', # SQL-Datetime-String-Format
 }
-#~ dbconf["dbHost"]="192.168.6.2"
+
 
 available_markups = ["none","textile"]
 
 
-
-class search:
-    # Relativ zum PyLicid-Verzeichnis
-    indexDBfile = "files/SearchIndex.bin"
-
-LogDatei = "log/%s.log"
-
-
-
-def debug():
-    import cgi
-
-    print "Content-type: text/html\n"
-    print "<h1>config-Debug:</h1>"
-    print system
-    print "<hr>"
-    print "<h3>config.preferences:</h3>"
-    print "<pre>"
-    #~ print preferences
-    for k,v in preferences.iteritems():
-        print k,"-",cgi.escape( str(v) )
-    print "</pre>"
 
 

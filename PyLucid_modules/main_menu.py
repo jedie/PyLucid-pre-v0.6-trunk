@@ -10,9 +10,11 @@ Das Menü wird eingebunden mit dem lucid-Tag:
 <lucidTag:main_menu/>
 """
 
-__version__="0.0.10"
+__version__="0.0.11"
 
 __history__="""
+v0.0.11
+    - Es werden nurnoch Seiten angezeigt, bei denen 'showlinks' gesetzt ist.
 v0.0.10
     - name und title werden nun mit cgi.escape() gewandelt, damit auch Seitennamen wie <robots> Angezeigt werden.
     - link wird mit urllib.quote_plus(), so sind auch Sonderzeichen wie "/" im Seitennamen erlaubt ;)
@@ -117,6 +119,7 @@ class main_menu:
         """
         Erweitert das SQL-where Statement um das Rechtemanagement zu berücksichtigen
         """
+        where_rules.append( ("showlinks",1) )
         if not self.session.has_key( "isadmin" ):
             where_rules.append( ("permitViewPublic",1) )
 

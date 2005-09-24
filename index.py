@@ -5,7 +5,7 @@ __author__  = "Jens Diemer (www.jensdiemer.de)"
 __license__ = "GNU General Public License (GPL)"
 __url__     = "http://www.PyLucid.org"
 
-__info__ = """<a href="%s" title="PyLucid - A OpenSource CMS in pure Python CGI by Jens Diemer">PyLucid</a> v0.4.0""" % __url__
+__info__ = """<a href="%s" title="PyLucid - A OpenSource CMS in pure Python CGI by Jens Diemer">PyLucid</a> v0.4.1""" % __url__
 
 """
 Rendert eine komplette Seite
@@ -41,9 +41,13 @@ Klasse werden Informationen über das Module/Plugin festgehalten, die vom
 Module-Manager eingelesen werden und PyLucid zur ferfügung gestellt werden.
 """
 
-__version__="0.3.1"
+__version__="0.3.3"
 
 __history__="""
+v0.3.3
+    - page_parser.render() aus dem Module-Manager zur verfügung gestellt
+v0.3.2
+    - Experimentall: CPU Zeit (time.clock()) wird zusätzlich angezeigt
 v0.3.1
     - Backports: Es wird nur der Pfad geändert, wenn Python älter als v2.4 ist. Damit werden erst die
         Backports gefunden und importiert ;)
@@ -124,6 +128,7 @@ rendern:
 # Als erstes Mal die Zeit stoppen ;)
 import time
 start_time = time.time()
+start_clock = time.clock()
 
 
 import cgitb;cgitb.enable()
@@ -134,7 +139,7 @@ import cgitb;cgitb.enable()
 import os, sys, urllib, cgi
 
 
-#~ print "Content-type: text/html; charset=utf-8\r\n\r\nDEBUG:"
+#~ print "Content-type: text/html; charset=utf-8\r\n\r\nDEBUG:<pre>"
 
 
 if not sys.version.startswith("2.4"):
@@ -228,6 +233,9 @@ class LucidRender:
         self.parser = page_parser.parser( self.PyLucid )
         self.PyLucid["parser"] = self.parser
 
+        self.render = page_parser.render( self.PyLucid )
+        self.PyLucid["render"] = self.render
+
         # Verwaltung von erweiterungs Modulen/Plugins
         self.module_manager = module_manager.module_manager( self.PyLucid )
         # Alle Module, die für den Modul-Manager vorbereitet wurden einlesen
@@ -237,9 +245,6 @@ class LucidRender:
         self.PyLucid["module_manager"] = self.module_manager
 
         self.setup_parser()
-
-        self.render = page_parser.render( self.PyLucid )
-        self.PyLucid["render"] = self.render
 
     def setup_parser( self ):
         """
@@ -473,7 +478,11 @@ class LucidRender:
             page_msg = ""
         page = page.replace( "<lucidTag:page_msg/>", page_msg )
 
-        return page.replace( "<lucidTag:script_duration/>", "%.2f" % (time.time() - start_time) )
+        end_time = time.time()
+        end_clock = time.clock()
+        time_string = "%.2fCPU %.2f" % (end_clock-start_clock, end_time-start_time)
+        #~ return page.replace( "<lucidTag:script_duration/>", "%.2f" % (time.time() - start_time) )
+        return page.replace( "<lucidTag:script_duration/>", "%s" % time_string )
 
     #_____________________________________________________________________________________________________
 

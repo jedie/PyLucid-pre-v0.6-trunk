@@ -242,7 +242,6 @@ class db( mySQL ):
                 from_table      = "preferences",
             )
 
-
     def get_page_link_by_id( self, page_id ):
         """ Generiert den absolut-Link zur Seite """
         data = []
@@ -268,6 +267,15 @@ class db( mySQL ):
                 select_items    = [ "id","name","title","parent"],
                 from_table      = "pages",
                 where           = [ ("showlinks",1), ("permitViewPublic",1) ],
+                order           = ("position","ASC"),
+            )
+
+    def make_order_data( self ):
+        """ Alle Daten die für`s Sitemap benötigt werden """
+        return self.select(
+                select_items    = [ "id","name","title","parent","position"],
+                from_table      = "pages",
+                #~ where           = [ ("showlinks",1), ("permitViewPublic",1) ],
                 order           = ("position","ASC"),
             )
 
@@ -355,6 +363,14 @@ class db( mySQL ):
         self.delete(
             table   = "templates",
             where   = ("id",template_id),
+            limit   = 1
+        )
+
+    def change_page_position( self, page_id, position ):
+        self.update(
+            table   = "pages",
+            data    = {"position":position},
+            where   = ("id",page_id),
             limit   = 1
         )
 

@@ -46,46 +46,51 @@ class log:
     Allgemeine SQL-Logging Klasse
     """
     def __init__ ( self, PyLucid ):
-        self.db     = PyLucid["db"]
-        self.tools  = PyLucid["tools"]
+        self.db         = PyLucid["db"]
+        self.tools      = PyLucid["tools"]
+        self.CGIdata    = PyLucid["CGIdata"]
+        self.page_msg   = PyLucid["page_msg"]
 
         # auf Default-Werte setzten
-        self.client_sID         = False
-        self.client_user_name   = False
-        self.client_ip          = False
-        self.client_domain      = False
+        # Nachdem eine Session erstellt wurde, werden diese Werte von index.py gesetzt
+        self.client_sID         = "unknown"
+        self.client_user_name   = "unknown"
 
-    def check_client_data( self ):
-        "Automatisches setzten von Client-Daten, wenn nicht schon geschehen"
-        if not os.environ.has_key("REMOTE_ADDR"):
-            return
 
-        if (self.client_ip == "-1") or (self.client_ip != os.environ["REMOTE_ADDR"]):
-            self.client_ip = os.environ["REMOTE_ADDR"]
-            try:
-                self.client_domain = getfqdn( self.client_ip )
-            except Exception, e:
-                self.client_domain = "can't detect: %s" % e
+    def check_type( self, type ):
+        if type != False:
+            return type
+
+        import inspect
+        # Den ersten Eintrag finden, der nicht aus dieser Datei stammt, denn
+        # das ist der Eintrag, der einen Log-Einrag abgesetzt hat ;)
+        for item in inspect.stack():
+            filename = item[1].replace( "\\", "/" )
+            filename = filename.split("/")[-1]
+            if filename != "SQL_logging.py":
+                return "%-20s line %3s" % (filename, item[2] )
+
+        return type
+
 
     #________________________________________________________________________________________
     ## Log-Datei schreiben / verwalten
 
-    def write( self, log_message ):
+    def write( self, log_message, type=False, status="-1" ):
         "File like writing method"
-        self.put( log_message )
+        self.put( log_message, type, status )
 
-    def __call__( self, *log_message ):
+    def __call__( self, log_message, type=False, status="-1" ):
         # Direkter Call-Aufruf zum schreiben
-        self.put( *log_message )
+        self.put( log_message, type, status )
 
-    def put( self, *log_message ):
+    def put( self, log_message, type=False, status="-1" ):
         "Schreib einen Eintag in die SQL-Log-Tabelle"
-        self.check_client_data()
+
+        type = self.check_type( type )
 
         # Alte Log-Einträge löschen
         self.delete_old_logs()
-
-        log_message = " ".join( [str(i) for i in log_message] )
 
         self.db.insert(
                 table = "log", # Prefix wird bei db.insert eingefügt
@@ -93,9 +98,11 @@ class log:
                     "timestamp" : self.tools.convert_time_to_sql( time.time() ),
                     "sid"       : self.client_sID,
                     "user_name" : self.client_user_name,
-                    "ip"        : self.client_ip,
-                    "domain"    : self.client_domain,
+                    "ip"        : self.CGIdata["client_ip"],
+                    "domain"    : self.CGIdata["client_domain"],
                     "message"   : log_message,
+                    "typ"       : type,
+                    "status"    : status,
                 }
             )
 
@@ -115,45 +122,10 @@ class log:
     #________________________________________________________________________________________
     ## Log-Datei lesen
 
-    #~ def get_by_IP( self, IP, log_typ=None, plaintext = False ):
-        #~ "Alle Log-Eintr�ge von der angegebenen IP-Adresse"
-
-        #~ if log_typ == None:
-            #~ SQLcommand  = " SELECT timestamp, typ, sid, user_name, ip, domain, message"
-            #~ SQLcommand += " FROM %s" % sql_tablename
-            #~ SQLcommand += " WHERE ip=%s"
-        #~ else:
-            #~ SQLcommand  = " SELECT timestamp, sid, user_name, ip, domain, message"
-            #~ SQLcommand += " FROM %s" % sql_tablename
-            #~ SQLcommand += " WHERE ( ip=%s and typ=%s )"
-
-        #~ SQLcommand += " ORDER BY `timestamp` DESC"
-        #~ SQLcommand += " LIMIT 0,10"
-
-        #~ if log_typ == None:
-            #~ self.db_cursor.execute( SQLcommand, (IP,) )
-        #~ else:
-            #~ self.db_cursor.execute( SQLcommand, (IP,log_typ) )
-
-        #~ DB_data = self.db_cursor.fetchall()
-
-        #~ if plaintext == False:
-            #~ return DB_data
-
-        #~ result = ""
-        #~ for line in DB_data:
-            #~ timestamp = line[0]
-            #~ info = line[1:]
-            #~ result += self.tools.convert_date_from_sql( timestamp )
-            #~ result += " - "
-            #~ result += ", ".join( [str(i) for i in info] )
-            #~ result += "\n"
-        #~ return result
-
     def get_last_logs( self, limit=10 ):
         """ Liefert die letzten >limit< Logeinträge zurück """
         return self.db.select(
-            select_items    = ["timestamp", "sid", "user_name", "ip", "domain", "message"],
+            select_items    = ["timestamp", "sid", "user_name", "ip", "domain", "message","typ","status"],
             from_table      = sql_tablename,
             order           = ("id","DESC"),
             limit           = (0,limit)

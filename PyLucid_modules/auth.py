@@ -5,9 +5,13 @@
 Abwicklung von Login/Logout
 """
 
-__version__ = "v0.1.1"
+__version__ = "v0.1.2"
 
 __history__ = """
+v0.1.2
+    - Verbesserungen:
+        - Für Rückmeldungen wird nun page_msg benutzt
+        - Nach einem Fehlgeschlagenen Login, wird das login Form mit dem alten Usernamen angezeigt
 v0.1.1
     - logout benötigt auch "direct_out": True, damit der Cookie auch gelöscht wird ;)
 v0.1.0
@@ -36,15 +40,20 @@ from PyLucid_system import crypt
 
 # =True: Login-Fehler sind aussagekräftiger: Sollte allerdings
 # wirklich nur zu Debug-Zwecke eingesetzt werden!!!
-Debug = True
+# Gleichzeitig wird Modul-Manager Debug ein/aus geschaltet
+#~ Debug = True
+Debug = False
 
 
 
 class auth:
 
     module_manager_data = {
+        "debug" : Debug,
+
         "login" : {
             "must_login"    : False,
+            "direct_out"    : True,
         },
         "logout" : {
             "must_login"    : False,
@@ -87,14 +96,21 @@ class auth:
         )
 
         try:
-            print login_form % {
+            # Alten Usernamen, nach einem Fehlgeschlagenen Login, wieder anzeigen
+            username = self.CGIdata["user"]
+        except KeyError:
+            username = ""
+
+        try:
+            return login_form % {
+                    "user"          : username,
                     "md5"           : self.config.system.md5javascript,
                     "md5manager"    : self.config.system.md5manager,
                     "rnd"           : random.randint(10000,99999),
                     "url"           : url
                 }
         except Exception, e:
-            print "Error in login_form! Please check DB. (%s)" % e
+            return "Error in login_form! Please check DB. (%s)" % e
 
     def check_login( self ):
         """
@@ -111,8 +127,7 @@ class auth:
             msg  = "<h1>Internal Error:</h1>"
             msg += "<h3>Form data not complete: '%s'</h3>" %e
             msg += "Did you run 'install_PyLucid.py'? Check login form in SQL table 'pages_internal'.<br/>"
-            if Debug:
-                msg += "CGI-Keys: " + str(self.CGIdata.keys())
+            if Debug: msg += "CGI-Keys: " + str(self.CGIdata.keys())
             return msg
 
         if md5login != 1:
@@ -124,10 +139,12 @@ class auth:
         """Fehler werden abhängig vom Debug-Status angezeigt/gespeichert"""
         self.log( log_msg )
         time.sleep(3)
+        self.page_msg( public_msg )
         if Debug:
             # Debug Modus: Es wird mehr Informationen an den Client geschickt
-            public_msg += "<p>%s</p>" % log_msg
-        return public_msg
+            self.page_msg( "Debug:",log_msg )
+        # Login-Form wieder anzeigen
+        return self.login()
 
     def check_md5_login( self, username, form_pass1, form_pass2, rnd ):
         """
@@ -137,7 +154,7 @@ class auth:
         if (len( form_pass1 ) != 32) or (len( form_pass2 ) != 32):
             return self._error(
                 "Error-0: len( form_pass ) != 32",
-                "<h1>LogIn Error!</h1>(errortype:0)"
+                "LogIn Error! (error:0)"
             )
 
         try:
@@ -154,7 +171,7 @@ class auth:
         if form_pass1 != db_userdata["pass1"]:
             return self._error(
                 'Error-1: form_pass1 != db_userdata["pass1"]',
-                "<h1>LogIn Error: Wrong Password!</h1>(errortype:1)"
+                "LogIn Error: Wrong Password! (error:1)"
             )
 
         try:
@@ -164,7 +181,7 @@ class auth:
         except Exception, e:
             return self._error(
                 "Error-2: decrypt db_pass2 failt: %s" % e ,
-                "<h1>LogIn Error: Wrong Password!</h1>(errortype:2)"
+                "LogIn Error: Wrong Password! (error:2)"
             )
 
         # An den entschlüßelten, zweiten Teil des Passwortes, die Zufallszahl dranhängen...
@@ -176,7 +193,7 @@ class auth:
         if db_pass2md5 != form_pass2:
             return self._error(
                 'Error-3: db_pass2md5 != form_pass2 |%s|' % db_pass2 ,
-                "<h1>LogIn Error: Wrong Password!</h1>(errortype:3)"
+                "LogIn Error: Wrong Password! (error:3)"
             )
 
         # Alles in Ordnung, User wird nun eingeloggt:

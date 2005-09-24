@@ -6,9 +6,11 @@ Erzeugt einen Download des SQL Dumps
 http://dev.mysql.com/doc/mysql/de/mysqldump.html
 """
 
-__version__="0.1.2"
+__version__="0.2.0"
 
 __history__="""
+v0.2.0
+    - HTML-Ausgaben nun über interne Seite
 v0.1.2
     - Umbenennung in MySQLdump, weil's ja nur für MySQL geht...
     - NEU: Nun kann man auch den Pfad zu mysqldump angeben. Standard ist "." (aktuelles Verzeichnis)
@@ -46,7 +48,6 @@ class MySQLdump:
         #~ "debug" : True,
         "debug" : False,
 
-        "link" : global_rights,
         "menu" : global_rights,
 
         "display_help"      : global_rights,
@@ -66,42 +67,15 @@ class MySQLdump:
         self.db         = PyLucid["db"]
         self.tools      = PyLucid["tools"]
 
-    def link ( self ):
-        print '<a href="%smenu">DB dump</a>' % self.action_url
-
-
     def menu( self ):
         """ Menü für Aktionen generieren """
-        print "<h2>DB dump v%s</h2>" %  __version__
 
-        print """<script>
-function set_all( value ) {
-    form = document.getElementById("sqldump_form");
-    for (i = 0; i < form.length; i++) {
-        if (form[i].value == value) {
-            form[i].checked = true;
-        }
-    }
-}
-</script>"""
-
-        print '<form name="sqldump" method="post" action="%s" id="sqldump_form">' % (
-            self.command_url
-        )
-        print "<h3>Tables to save in dump:</h3>"
-        print '<table id="table_cfg">'
-        print ' <thead>'
-        print '     <tr>'
-        print '     <th>table name</th>'
-        print """     <th><a href="JavaScript:set_all('ignore');">ignore</a></th>"""
-        print """     <th><a href="JavaScript:set_all('structure');">structure</a></th>"""
-        print """     <th><a href="JavaScript:set_all('complete');">all complete</a></th>"""
-        print '     </tr>'
-        print ' </thead>'
+        internal_page = self.db.get_internal_page("MySQL_dump")
 
         default_no_data = ["log", "session_data"]
         default_no_data = [self.config.dbconf["dbTablePrefix"] + i for i in default_no_data]
 
+        table_data = ""
         for name in self.db.get_tables():
             if name in default_no_data:
                 structure = ' checked="checked"'
@@ -110,55 +84,16 @@ function set_all( value ) {
                 structure = ''
                 complete = ' checked="checked"'
 
-            print '<tr>'
-            print ' <td>%s</td>' % name
-            print ' <td><input type="radio" name="%s" value="ignore"></td>' % name
-            print ' <td><input type="radio" name="%s" value="structure"%s></td>' % (
+            table_data += '<tr>\n'
+            table_data += '\t<td>%s</td>\n' % name
+            table_data += '\t<td><input type="radio" name="%s" value="ignore"></td>\n' % name
+            table_data += '\t<td><input type="radio" name="%s" value="structure"%s></td>\n' % (
                 name, structure
             )
-            print ' <td><input type="radio" name="%s" value="complete"%s></td>' % (
+            table_data += '\t<td><input type="radio" name="%s" value="complete"%s></td>\n' % (
                 name, complete
             )
-            print '</tr>'
-        print '</table>'
-        print '<p><small>ignore - No data saved in dump.<br />'
-        print 'structure - Only table structure saved in dump.<br />'
-        print 'complete - table structure + all data saved in dump.</small></p>'
-
-        print "<h3>Options:</h3>"
-
-        print 'mysqldump path:'
-        print '<input name="mysqldump_path" value="." size="60" maxlength="150" type="text">'
-        print '<br/><small>(if mysqldump in path then use "." if not use "/usr/bin/" or else...)</small><br/>'
-
-        print '<p class="db_dump">'
-        print 'character set:'
-        print '<select name="character-set" size="1">'
-        print self.tools.html_option_maker().build_from_list(
-                ["latin1","utf8"],
-                select_item = "latin1"
-            )
-        print '</select>'
-        print '<br/>'
-
-        print 'compatible:'
-        print '<select name="compatible" size="1">'
-        print self.tools.html_option_maker().build_from_list(
-            ["","ansi", "mysql323", "mysql40", "postgresql", "oracle", "mssql", "db2", "maxdb",
-            "no_key_options", "no_table_options", "no_field_options"],
-            select_item = "mysql40"
-            )
-        print '</select>'
-        print "<br/><small>(Requires MySQL server v4.1.0 or higher, else use blank "")</small><br/>"
-
-        print '<br/>'
-
-        print 'additional parameters:'
-        print '<input name="options" value="--extended-insert --skip-opt --compact" size="60" maxlength="150" type="text">'
-
-        print '</p>'
-
-        print '<p>'
+            table_data += '</tr>\n'
 
         self.actions = [
             ( "download_dump",  "download dump"),
@@ -166,14 +101,18 @@ function set_all( value ) {
             ( "display_help",   "mysqldump help" ),
             ( "display_command","display mysqldump command" ),
         ]
-
+        buttons = ""
         for action in self.actions:
-            print '<button type="submit" name="action" value="%s">%s</button>&nbsp;&nbsp;' % (
+            buttons += '<button type="submit" name="action" value="%s">%s</button>&nbsp;&nbsp;\n' % (
                     action[0], action[1]
                 )
-        print '</p>'
 
-        print '</form>'
+        print internal_page['content'] % {
+            "version"       : __version__,
+            "tables"        : table_data,
+            "url"           : self.command_url,
+            "buttons"       : buttons
+        }
 
     #_______________________________________________________________________
 
@@ -185,7 +124,7 @@ function set_all( value ) {
         output = self._run_command_list( command_list, timeout = 120, header=True )
 
         if output == False:
-            # Ein Fehler ist aufgereten, Meldunge wurden schon ausgegeben
+            # Ein Fehler ist aufgereten, Meldung wurden schon ausgegeben
             print '<a href="JavaScript:history.back();">back</a>'
             sys.exit()
 
@@ -198,9 +137,8 @@ function set_all( value ) {
         )
         print 'Content-Transfer-Encoding: binary'
         print 'Content-Type: application/octet-stream; charset=utf-8\n'
-
+        #~ print "Content-type: text/html; charset=utf-8\n"
         sys.stdout.write( output )
-
         sys.exit()
 
     #_______________________________________________________________________
@@ -380,26 +318,7 @@ function set_all( value ) {
 
         return txt
 
-    #~ def _get_sql_command( self ):
-        #~ tablenames = " ".join( self.db.get_tables() )
 
-        #~ try:
-            #~ compatible = self.CGIdata["compatible"]
-        #~ except KeyError:
-            #~ compatible = ""
-        #~ else:
-            #~ compatible = " --compatible=%s " % compatible
-
-        #~ return "mysqldump --default-character-set=%(cs)s%(cp)s %(op)s -u%(u)s -p%(p)s -h%(h)s %(n)s --tables %(tn)s" % {
-            #~ "cs" : self.CGIdata["character-set"],
-            #~ "cp" : compatible,
-            #~ "op" : self.CGIdata["options"],
-            #~ "u"  : self.config.dbconf["dbUserName"],
-            #~ "p"  : self.config.dbconf["dbPassword"],
-            #~ "h"  : self.config.dbconf["dbHost"],
-            #~ "n"  : self.config.dbconf["dbDatabaseName"],
-            #~ "tn" : tablenames,
-        #~ }
 
 
 

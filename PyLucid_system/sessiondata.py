@@ -31,7 +31,7 @@ import config
 if config.system.page_msg_debug:
     import inspect
 
-
+from socket import getfqdn
 
 #~ from config import dbconf
 
@@ -62,6 +62,8 @@ class CGIdata:
         self.get_CGIdata() # CGI-Daten ermitteln
 
         self.convert_types()
+
+        self.get_client_info()
 
     def get_CGIdata( self ):
         """
@@ -104,6 +106,22 @@ class CGIdata:
                 self.data[k] = int( v )
             except:
                 pass
+
+
+    def get_client_info( self ):
+        """
+        Client Informationen festhalten. Ist u.a. für's SQL-logging interessant.
+        """
+        if not os.environ.has_key("REMOTE_ADDR"):
+            self.data["client_ip"] = "unknown"
+            self.data["client_domain"] = "unknown"
+            return
+
+        self.data["client_ip"] = os.environ["REMOTE_ADDR"]
+        try:
+            self.data["client_domain"] = getfqdn( self.data["client_ip"] )
+        except Exception, e:
+            self.data["client_domain"] = "unknown: '%s'" % e
 
     #______________________________________________________________________________
     # Methoden um an die Daten zu kommen ;)

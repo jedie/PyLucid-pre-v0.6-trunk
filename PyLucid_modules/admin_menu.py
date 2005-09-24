@@ -13,9 +13,11 @@ Erzeugt das Administration-Menü
 Sollte im Template für jede Seite eingebunden werden.
 """
 
-__version__="0.0.2"
+__version__="0.0.3"
 
 __history__="""
+v0.0.3
+    - Anpassung an wegfall von apply_markup
 v0.0.2
     - lucidTag ist nicht mehr front_menu sondern admin_menu
 v0.0.1
@@ -39,6 +41,9 @@ class admin_menu:
     }
 
     module_manager_data = {
+        #~ "debug" : True,
+        "debug" : False,
+
         "lucidTag" : {
             "must_login"    : True,
             "must_admin"    : False,
@@ -49,7 +54,11 @@ class admin_menu:
         "new_page_link"     : global_rights,
         "del_page_link"     : global_rights,
         "sub_menu_link"     : global_rights,
-        "sub_menu"          : global_rights,
+        "sub_menu"          : {
+            "must_login"    : True,
+            "must_admin"    : True,
+            "has_Tags"      : True,
+        },
     }
 
     def __init__( self, PyLucid ):
@@ -73,11 +82,8 @@ class admin_menu:
     def new_page_link( self ):
         print '<a href="%s&command=pageadmin&action=new_page">new page</a>' % self.base_url
 
-    def del_page_link( self ):
-        print '<a href="%s&command=pageadmin&action=del_page">del page</a>' % self.base_url
-
     def sub_menu_link( self ):
         print '<a href="%ssub_menu">sub menu</a>' % self.action_url
 
     def sub_menu( self ):
-        print self.db.get_internal_page( "admin_sub_menu" )["content"]
+        return self.db.get_internal_page( "admin_sub_menu" )

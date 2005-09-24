@@ -10,9 +10,15 @@ Alles was mit dem ändern von Inhalten zu tun hat:
 
 __author__ = "Jens Diemer (www.jensdiemer.de)"
 
-__version__="0.1.0"
+__version__="0.2"
 
 __history__="""
+v0.2
+    - NEU: "sequencing" - Ändern der Seiten-Reihenfolge
+    - select_del_page benutzt nun CGI_dependent_actions (vereinheitlichung im Ablauf mit anderen Modulen)
+v0.1.1
+    - NEU: select_edit_page: Editieren einer Seite mit Select-Box in denen _alle_ Seiten angezeigt werden.
+    - Bug 1275807 gefixed: "showlinks" und "permitViewPublic" werden nun richtig auf 0 gesetzt statt ""
 v0.1.0
     - NEU: Das löschen von Seiten geht nun auch ;)
     - Anpassung an neuen Module-Manager
@@ -40,7 +46,7 @@ das Archiv nicht mehr angezeigt :(
 """
 
 # Python-Basis Module einbinden
-import sys, cgi, time, pickle
+import sys, cgi, time, pickle, urllib
 
 
 
@@ -51,25 +57,31 @@ class pageadmin:
     """
     Editieren einer CMS-Seite mit Preview und Archivierung
     """
-
     module_manager_data = {
+        #~ "debug" : True,
+        "debug" : False,
+
         "edit_page" : {
             "must_login"    : True,
             "must_admin"    : False,
             #~ "get_page_id"   : True,
+        },
+        "select_edit_page" : {
+            "must_login"    : True,
+            "must_admin"    : False,
         },
         "new_page" : {
             "must_login"    : True,
             "must_admin"    : True,
             #~ "get_page_id"   : True,
         },
-        "del_page" : {
+        "select_del_page" : {
             "must_login"    : True,
             "must_admin"    : True,
             "CGI_dependent_actions" : {
-                "delete_page"        : {
-                    "CGI_laws"      : { "action":"del_page" },
-                    "CGI_must_have" : ("side_id_to_del",)
+                "delete_page"       : {
+                    "CGI_laws"      : {"Submit":"delete_page"},
+                    "CGI_must_have" : ("side_id_to_del",),
                 },
             }
         },
@@ -78,6 +90,14 @@ class pageadmin:
             "must_admin"    : False,
         },
         "save" : {
+            "must_login"    : True,
+            "must_admin"    : False,
+        },
+        "sequencing" : {
+            "must_login"    : True,
+            "must_admin"    : False,
+        },
+        "save_positions" : {
             "must_login"    : True,
             "must_admin"    : False,
         },
@@ -108,6 +128,7 @@ class pageadmin:
         page_data = {
             "parent"            : int( self.CGIdata["page_id"] ),
             "name"              : "NewSide",
+            "title"             : "NewSide",
             "template"          : core["defaultTemplate"],
             "style"             : core["defaultStyle"],
             "markup"            : core["defaultMarkup"],
@@ -116,7 +137,6 @@ class pageadmin:
             "ownerID"           : self.session["user_id"],
             "permitViewGroupID" : 1,
             "permitEditGroupID" : 1,
-            "title"             : "",
             "content"           : "",
             "keywords"          : "",
             "description"       : "",
@@ -140,8 +160,24 @@ class pageadmin:
                 page_id     = page_id
             )
 
-    def check_user_rights( self ):
-        pass
+    #_______________________________________________________________________
+    # Edit a page
+
+    def select_edit_page( self ):
+        """
+        Wenn eine Seite showlinks ausgeschaltet hat, kommt sie nicht mehr im Menü und
+        im SiteMap vor. Um sie dennoch editieren zu können, kann man es hierrüber erledigen ;)
+        """
+        internal_page = self.db.get_internal_page("select_page_to_edit")
+
+        # Wichtig, hier darf keine Modulemaneger Link genutzt werden, weil page_id= schon
+        # enthalten ist. Dieser wird jedoch von der select-Box bestimmt!!!
+
+        internal_page['content'] = internal_page['content'] % {
+            "url"         : "%s?command=pageadmin&action=edit_page" % self.config.system.real_self_url,
+            "side_option" : self.tools.forms().SideOptionList( with_id = True, select = self.CGIdata["page_id"] )
+        }
+        return internal_page
 
     def edit_page( self, encode_from_db=False ):
         page_data = self.get_page_data( self.CGIdata["page_id"] )
@@ -245,14 +281,16 @@ class pageadmin:
     def set_default( self, dictionary ):
         """
         Kompletiert evtl. nicht vorhandene Keys.
-        Leere HTML-input-Felder erscheinen nicht in den CGIdaten, diese müßen
-        aber für die weiterverarbeitung im Dict als keys mit leeren (="") value
-        erscheinen.
+        Leere HTML-input-Felder bzw. nicht aktivierte checkboxen erscheinen nicht in den CGIdaten,
+        diese müßen aber für die Weiterverarbeitung im Dict vorhanden sein.
         """
-        key_list = ("name", "title", "content", "keywords", "description", "showlinks", "permitViewPublic")
-        for key in key_list:
+        default_dict = {
+            "name":"", "title":"", "content":"", "keywords":"", "description":"",
+            "showlinks":0, "permitViewPublic":0
+        }
+        for key, value in default_dict.iteritems():
             if not dictionary.has_key( key ):
-                dictionary[key] = ""
+                dictionary[key] = value
         return dictionary
 
     def preview( self ):
@@ -344,7 +382,7 @@ class pageadmin:
         if self.session.has_key("make_new_page"):
             # Eine neue Seite soll gespeichert werden
             new_page_data["datetime"] = new_page_data["lastupdatetime"] # Erstellungszeit
-            new_page_data["position"] = 1
+            #~ new_page_data["position"] = 0
             try:
                 self.db.insert(
                         table   = "pages",
@@ -383,24 +421,26 @@ class pageadmin:
             self.page_msg( "New side data updated." )
 
     #_______________________________________________________________________
+    # Delete a page
 
-    def del_page( self ):
+    def select_del_page( self ):
         """
         Auswahl welche Seite gelöscht werden soll
         """
-        internal_page = self.db.get_internal_page("del_page")['content']
+        internal_page = self.db.get_internal_page("select_page_to_del")
 
-        print internal_page % {
-            "url"         : self.command_url,
+        internal_page['content'] = internal_page['content'] % {
+            "url"         : self.action_url + "select_del_page",
             "side_option" : self.tools.forms().SideOptionList( with_id = True, select = self.CGIdata["page_id"] )
         }
-
+        return internal_page
 
     def delete_page( self ):
         """
         Löscht die Seite, die ausgewählt wurde
         """
         side_id_to_del = self.CGIdata["side_id_to_del"]
+
         try:
             comment = self.CGIdata["comment"]
         except KeyError:
@@ -416,23 +456,22 @@ class pageadmin:
             # Hat noch Unterseiten
             msg = "Can't delete Page!"
             self.page_msg( msg )
-            print "<h3>%s</h3>" % msg
+            print "h3. %s" % msg
+            print
             print "Page has parent pages:"
-            print "<ul>"
             for side in parents:
-                print "<li>%s</li>" % cgi.escape( side["name"] )
-            print "</ul>"
+                print "* %s" % cgi.escape( side["name"] )
             print "Please move parents."
+
             # "Menü" wieder anzeigen
-            self.del_page()
-            return
+            return self.select_del_page()
 
         try:
             self.archive_page( side_id_to_del, "delete page", comment )
         except Exception, e:
             self.page_msg( "Delete page error:" )
             self.page_msg( "Can't archive side with ID %s: %s" % (side_id_to_del, e) )
-            return False
+            return
 
         if self.CGIdata["page_id"] == side_id_to_del:
             # Die aktuelle Seite wird gelöscht, also kann sie nicht mehr angezeigt werden.
@@ -455,7 +494,7 @@ class pageadmin:
         )
 
         # "Menü" wieder anzeigen
-        self.del_page()
+        return self.select_del_page()
 
     #_______________________________________________________________________
 
@@ -480,7 +519,79 @@ class pageadmin:
             "Archived side in %.2fsec." % duration_time
         )
 
+    #_______________________________________________________________________
 
+    def sequencing( self ):
+        """
+        Formular zum ändern der Seiten-Reihenfolge
+        """
+
+        internal_page = self.db.get_internal_page("sequencing")["content"]
+
+        self.data = self.db.make_order_data()
+
+        self.parent_list = []
+        for site in self.data:
+            if not site["parent"] in self.parent_list:
+                self.parent_list.append( site["parent"] )
+
+        MyOptionMaker = self.tools.html_option_maker()
+
+        position_list = [""] + [str(i) for i in xrange(-10,11)]
+        self.position_option = MyOptionMaker.build_from_list( position_list, "" )
+
+        print internal_page % {
+            "url"       : self.action_url + "save_positions",
+            "form_data" : self.make_order_page(),
+        }
+
+    def make_order_page( self, id = 0, deep = 0, form_data="" ):
+        """
+        Generiert die Liste für die Positionsänderung
+        """
+        form_data += '<ul>\n'
+        for site in self.data:
+            if site["parent"] == id:
+                form_data += '<li>'
+
+                form_data += "<strong>%s</strong>" % cgi.escape( site["name"] )
+
+                form_data += '<span class="forms">'
+                form_data += 'current position: <strong>%s</strong> ' % site["position"]
+                form_data += '<select name="page_id_%s">\n' % site["id"]
+                form_data += '%s</select>' % self.position_option
+                form_data += '<button type="submit" name="Submit">save</button>'
+                form_data += '</span>'
+
+                form_data += "</li>\n"
+
+                if site["id"] in self.parent_list:
+                    form_data += self.make_order_page( site["id"], deep +1 )
+
+        form_data += "</ul>\n"
+        return form_data
+
+    def save_positions( self ):
+        """
+        Positionsänderungen speichern
+        """
+        #~ self.CGIdata.debug()
+        for key,value in self.CGIdata.iteritems():
+            if key.startswith("page_id_"):
+                try:
+                    page_id = int( key[8:] )
+                    position = int( value )
+                except Exception,e:
+                    self.page_msg(
+                        "Can't change page position (%s,%s): %s" % (key, value, e)
+                    )
+                    continue
+
+                self.db.change_page_position( page_id, position)
+                self.page_msg( "Save position %s for page with ID %s" % (position,page_id) )
+
+        # Menu wieder anzeigen
+        self.sequencing()
 
 
 

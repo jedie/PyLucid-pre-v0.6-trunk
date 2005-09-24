@@ -22,7 +22,7 @@ import os, sys, re, time, zipfile, zlib
 zlib.Z_DEFAULT_COMPRESSION = 9
 
 
-infilename      = "20050916_PyLucid_base_db1017233-jensDE.sql"
+infilename      = "20050924_PyLucid_base_db1017233-jensDE.sql"
 TablePrefix     = "PyLucid_base_"
 #~ TablePrefix     = "lucid_"
 
@@ -31,6 +31,7 @@ outfilename     = "PyLucid_SQL_install_data.zip"
 zip_filename    = "SQLdata.sql"
 
 
+# Einträge die rausfallen
 filter_startswith = (
     "INSERT INTO `%(table_prefix)sarchive`",
     "INSERT INTO `%(table_prefix)slog`",
@@ -85,16 +86,38 @@ class universalize_dump:
         print "Read Data and convert...",
         infile = file( infilename, "rU" )
 
-        outdata = self.dump_info()
+        re_find_name = re.compile( r"`\%\(table_prefix\)s(.*?)`" )
+        category = ""
+        outdata = { "info.txt": self.dump_info() }
+        #~ in_create_table = False
+
         for line in infile:
-            outdata += self.preprocess( line )
+            line = self.preprocess( line )
+            if line.startswith("--"):
+                category = "info.txt"
+            else:
+                find_name = re_find_name.findall( line )
+                if find_name != []:
+                    category = find_name[0]+".sql"
+
+            if category != "info.txt" and (not line.endswith(";\n")):
+                # Jedes SQL-Kommando in einer Zeile quetschen
+                line = line[:-1].strip()
+
+            if not outdata.has_key(category):
+                outdata[category] = ""
+
+            if line=="": continue # Leere Zeilen brauchen wir nicht
+
+            outdata[category] += line
 
         infile.close()
         print "OK"
 
         print "Write zipfile...",
         outfile = zipfile.ZipFile( outfilename, "w", zipfile.ZIP_DEFLATED)
-        outfile.writestr( zip_filename, outdata)
+        for filename,data in outdata.iteritems():
+            outfile.writestr(filename,data)
         outfile.close()
         print "OK"
 

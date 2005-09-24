@@ -7,9 +7,15 @@ Evtl. muß der Pfad in dem sich PyLucid's "config.py" sich befindet
 per Hand angepasst werden!
 """
 
-__version__ = "v0.1.0"
+__version__ = "v0.2"
 
 __history__ = """
+v0.2
+    - Anpassung an neue install-Daten-Struktur.
+    - "add Admin"-Formular wird mit JavaScript überprüft.
+    - NEU Path Check: allerdings wird erstmal nur die Pfade angezeigt, mehr nicht...
+    - CSS Spielereien
+    - Aussehen geändert
 v0.1.0
     - NEU: "partially re-initialisation DB tables" damit kann man nur ausgesuhte
         Tabellen mit den Defaultwerten überschrieben.
@@ -89,11 +95,6 @@ import os, sys, cgi, re, zipfile
 
 
 
-# Interne PyLucid-Module einbinden
-# Verzeichnis in dem PyLucid's "config.py" sich befindet, in den Pfad aufnehmen
-#~ sys.path.insert( 0, os.environ["DOCUMENT_ROOT"] )
-#~ sys.path.insert( 0, os.environ["DOCUMENT_ROOT"] + "cgi-bin/PyLucid" )
-
 import config # PyLucid's "config.py"
 from PyLucid_system import SQL, sessiondata, userhandling
 
@@ -143,113 +144,152 @@ HTML_head = """<?xml version="1.0" encoding="UTF-8"?>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 </head>
 <body>
+<style type="text/css">
+html, body {
+    padding: 3em;
+    background-color: #FFFFEE;
+}
+body {
+    font-family: tahoma, arial, sans-serif;
+    color: #000000;
+    font-size: 0.9em;
+    background-color: #FFFFDB;
+    margin: 3em;
+    border: 3px solid #C9C573;
+}
+form * {
+  vertical-align:middle;
+}
+input {
+    border: 1px solid #C9C573;
+    margin: 0.4em;
+}
+pre {
+    background-color: #FFFFFF;
+    padding: 1em;
+}
+</style>
 <h2>PyLucid Setup %s</h2>""" % __version__
+HTML_bottom = "</body></html>"
 
 
 class SQL_dump:
-
-    re_all_create_tables    = re.compile( r"(?is)(CREATE TABLE.*?;)" )
-    re_all_table_names      = re.compile( r"(?is)CREATE TABLE `(.*?)`" )
-    re_all_inserts          = re.compile( r"(?is)(INSERT INTO.*?;)\n" )
-
+    """
+    Klasse zum "verwalten" des SQL-install-Dumps
+    """
     def __init__( self, db ):
         self.db = db
 
         self.in_create_table = False
         self.in_insert = False
 
-        self.data = self._get_zip_dump()
-
-    def _get_zip_dump( self ):
-        print "Open '%s'..." % install_zipfile,
-        ziparchiv = zipfile.ZipFile( install_zipfile, "r" )
-        data = ziparchiv.read( dump_filename )
-        ziparchiv.close()
-        print "OK"
-
-        return data
-
-    def execute_SQL_list( self, command_list ):
-        count = 0
-        for command in command_list:
-            status = self.execute( command )
-            if status == True:
-                count += 1
-        return count
+        self.ziparchiv = zipfile.ZipFile( install_zipfile, "r" )
 
     def import_dump( self ):
+        table_names = self.get_table_names()
         print "<pre>"
-        create_tables = self.table_commands()
-        count = self.execute_SQL_list( create_tables )
-        print count, "Tables created."
-        print
+        for current_table in table_names:
+            print "install DB table '%s'..." % current_table,
+            command = self.get_table_data(current_table)
 
-        insert_values = self.insert_commands()
-        count = self.execute_SQL_list( insert_values )
-        print count, "items insert."
+            try:
+                counter = self.execute_many(command)
+            except Exception,e:
+                print "ERROR:", e
 
-    def table_commands( self ):
-        create_tables = self.re_all_create_tables.findall( self.data )
-        create_tables = [self._complete_prefix(i) for i in create_tables]
-        return create_tables
+            print "OK"
 
-    def insert_commands( self ):
-        insert_values = self.re_all_inserts.findall( self.data )
-        insert_values = [self._complete_prefix(i) for i in insert_values]
-        return insert_values
+        print "</pre>"
 
-    def insert_dict( self ):
-        result = {}
-        re_filter = "(?is)INSERT INTO `(.*?)`"
-        for command in self.insert_commands():
-            tablename = re.findall( re_filter, command )[0]
-            if not result.has_key( tablename ):
-                result[tablename] = []
-            result[tablename].append( command )
-        return result
-
-    def get_table_names( self ):
-        create_tables = self.table_commands()
-        table_names = []
-        for table in create_tables:
-            table_names.append( self.re_all_table_names.findall( table )[0] )
-        table_names.sort()
-        return table_names
-
-    def _complete_prefix( self, line ):
-        return line % { "table_prefix" : config.dbconf["dbTablePrefix"] }
+    def _complete_prefix( self, data ):
+        return data % { "table_prefix" : config.dbconf["dbTablePrefix"] }
 
     def install_tables( self, table_names ):
         """ Installiert nur die Tabellen mit angegebenen Namen """
-        insert_dict = self.insert_dict()
-
         print "<pre>"
-        create_tables = self.table_commands()
-        for command in create_tables:
-            current_table = self.re_all_table_names.findall( command )[0]
-            if current_table in table_names:
-                print "re-initialisation DB table '%s':" % current_table
-                print " - Drop table"
-                self.execute( "DROP TABLE `%s`;" % current_table )
-                print " - Create table"
-                self.execute( command )
+        reinit_tables = list(table_names)
+        for current_table in table_names:
+            print "re-initialisation DB table '%s':" % current_table
+            command = self.get_table_data(current_table)
 
-                print " - Insert values in table %s" % current_table
-                try:
-                    insert_commands = insert_dict[current_table]
-                except KeyError, e:
-                    print "   No insert's for %s" % current_table
-                else:
-                    count = self.execute_SQL_list( insert_commands )
-                    print "   %s rows insert." % count
+            print " - Drop table"
+            status = self.execute(
+                "DROP TABLE `%s%s`;" % (config.dbconf["dbTablePrefix"],current_table)
+            )
 
-                table_names.remove( current_table )
-                print
+            print " - recreate Table and insert values"
+            try:
+                counter = self.execute_many(command)
+            except Exception,e:
+                print "ERROR:", e
+                sys.exit()
 
-        if table_names != []:
+            reinit_tables.remove(current_table)
+            print
+
+        if reinit_tables != []:
             print "Error, Tables remaining:"
             print table_names
         print "</pre>"
+
+
+    #__________________________________________________________________________________________
+    # Zugriff auf ZIP-Datei
+
+    def get_table_data(self, table_name):
+        try:
+            data = self.ziparchiv.read( table_name+".sql" )
+        except Exception, e:
+            print "Can't get data for '%s': %s" % (table_name, e)
+            sys.exit()
+
+        return self._complete_prefix( data )
+
+    def get_table_names(self):
+        """
+        Die Tabellen namen sind die Dateinamen, außer info.txt
+        """
+        table_names = []
+        for fileinfo in self.ziparchiv.infolist():
+            if fileinfo.filename.endswith("/"):
+                # Ist ein Verzeichniss
+                continue
+            filename = fileinfo.filename
+            if filename == "info.txt":
+                continue
+            filename = os.path.splitext(filename)[0]
+            table_names.append(filename)
+        table_names.sort()
+        return table_names
+
+    #__________________________________________________________________________________________
+    # SQL
+
+    def execute_many(self, command):
+        """
+        In der Install-Data-Datei sind in jeder Zeile ein SQL-Kommando,
+        diese werden nach einander ausgeführt
+        """
+        counter = 0
+        for line in command.split("\n"):
+            if line=="": # Leere Zeilen überspringen
+                continue
+            self.execute(line)
+            counter += 1
+        return counter
+
+    def execute( self, SQLcommand ):
+        #~ try:
+        self.db.cursor.execute( SQLcommand )
+        #~ except Exception, e:
+            #~ print "Error: '%s' in SQL-command:" % cgi.escape( str(e) )
+            #~ print "'%s'" % SQLcommand
+            #~ print
+            #~ return False
+        #~ else:
+            #~ return True
+
+    #__________________________________________________________________________________________
 
     def dump_data( self ):
         print "<h2>SQL Dump data:</h2>"
@@ -259,14 +299,12 @@ class SQL_dump:
             print cgi.escape( self._complete_prefix( line )  )
         print "</pre>"
 
-    def execute( self, SQLcommand ):
-        try:
-            self.db.cursor.execute( SQLcommand )
-        except Exception, e:
-            print "Error: '%s'" % cgi.escape( str(e) )
-            return False
-        else:
-            return True
+
+
+
+##__________________________________________________________________________________________
+
+
 
 
 class PyLucid_setup:
@@ -278,8 +316,11 @@ class PyLucid_setup:
             print "check config in 'config.py' first!"
             sys.exit()
 
+        self.page_msg = sessiondata.page_msg()
+        PyLucid = {"page_msg": self.page_msg}
 
-        self.CGIdata = sessiondata.CGIdata( {"page_msg":""} )
+        self.CGIdata = sessiondata.CGIdata( PyLucid )
+        #~ print "<p>CGI-data debug: '%s'</p>" % self.CGIdata
 
         if self.CGIdata.has_key( "action" ):
             action = self.CGIdata["action"]
@@ -291,15 +332,11 @@ class PyLucid_setup:
             unbound_method() # Methode "starten"
             sys.exit()
 
-        #~ print "<p>CGI-data debug: '%s'</p>" % self.CGIdata
-
         self.actions = [
                 (self.install_PyLucid,  "install",              "Install PyLucid from scratch"),
                 (self.add_admin,        "add_admin",            "add a admin user"),
                 (self.re_init,          "re_init",              "partially re-initialisation DB tables"),
-                #~ (self.default_internals,"default_internals",    "set all internal pages to default"),
                 #~ (self.convert_db,       "convert_db",           "convert DB data from PHP-LucidCMS to PyLucid Format"),
-                #~ (self.sql_dump,         "sql_dump",             "SQL dump (experimental)"),
                 #~ (self.convert_locals,   "locals",               "convert locals (ony preview!)"),
             ]
 
@@ -307,12 +344,22 @@ class PyLucid_setup:
             if self.CGIdata.has_key( action[1] ):
                 # Ruft die Methode auf, die in self.actions definiert wurde
                 action[0]()
+                print self.page_msg.data
                 sys.exit()
 
         self.print_actionmenu()
+        print "<hr>"
         self.check_system()
+        self.print_info()
 
         self.db.close()
+        print HTML_bottom
+
+    def print_info( self ):
+        print "<hr>"
+        print '<p><a href="http://www.pylucid.org">www.pylucid.org</a> |'
+        print '<a href="http://www.pylucid.org/index.py?p=/Download/install+PyLucid">install instructions</a> |'
+        print '<a href="http://www.pylucid.org/index.py?p=/Download/update+instructions">update instructions</a></p>'
 
     def check_system( self ):
         def check_file_exists( filepath, txt ):
@@ -324,13 +371,22 @@ class PyLucid_setup:
             else:
                 print txt,"file found - OK"
 
-        print "<hr><pre>"
-        print "System check:"
-        print
-
+        print "<h4>System check:</h4>"
+        print "<pre>"
         check_file_exists( config.system.md5javascript, "Ralf Mieke's 'md5.js'-File" )
         check_file_exists( config.system.md5manager, "PyLucid's 'md5manager.js'-File" )
+        print "</pre>"
 
+        self.check_path()
+
+    def check_path( self ):
+        print "<h4>Path Check:</h4>"
+        print "<pre>"
+        script_filename = config.system.script_filename
+        document_root   = config.system.document_root
+
+        print "script_filename:", script_filename
+        print "document_root:", document_root
         print "</pre>"
 
     def print_actionmenu( self ):
@@ -341,7 +397,7 @@ class PyLucid_setup:
 
         print "</ul>"
 
-    ###########################################################################################
+    #__________________________________________________________________________________________
 
     def install_PyLucid( self ):
         """ Installiert PyLucid von Grund auf """
@@ -436,16 +492,35 @@ class PyLucid_setup:
     #__________________________________________________________________________________________
 
     def add_admin( self ):
-        if not self._has_all_keys( self.CGIdata, ["username","email","pass"] ):
-            print '<form name="login" method="post" action="?add_admin">'
+        #~ self.CGIdata.debug()
+        if not self._has_all_keys( self.CGIdata, ["username","email","pass1"] ):
+            print '<form name="data" method="post" action="?add_admin" onSubmit="return check()">'
             print '<p>'
             print 'Username: <input name="username" type="text" value=""><br />'
             print 'email: <input name="email" type="text" value=""><br />'
             print 'Realname: <input name="realname" type="text" value=""><br />'
-            print 'Passwort: <input name="pass" type="password" value="">(len min.8!)<br />'
+            print 'Password 1: <input name="pass1" type="password" value="">(len min.8!)<br />'
+            print 'Password 2: <input name="pass2" type="password" value="">(verification)<br />'
             print '<strong>(Note: all fields required!)</strong><br />'
-            print '<input type="submit" name="Submit" value="add admin" />'
+            print '<button type="submit" name="Submit">add admin</button>'
             print '</p></form>'
+            print '<script type="text/javascript">'
+            print 'function check() {'
+            print '  if (document.data.pass1.value != document.data.pass2.value) {'
+            print '    alert("Passwort verfication fail! password 1 != password 2");'
+            print '    return false;'
+            print '  }'
+            print '  if (document.data.pass1.value.length <= 7) {'
+            print '    alert("For security, min. password length is 8 chars!");'
+            print '    return false;'
+            print '  }'
+            print '  if (document.data.email.value.indexOf("@") == -1) {'
+            print '    alert("Need a valid eMail adress (for password recovery.)");'
+            print '    return false;'
+            print '  }'
+            print '  return true;'
+            print '}'
+            print '</script>'
             return
 
         print "<h3>Add Admin:</h3>"
@@ -457,7 +532,7 @@ class PyLucid_setup:
         #~ print self.CGIdata["pass"]
 
         usermanager = userhandling.usermanager( self.db )
-        usermanager.add_user( self.CGIdata["username"], self.CGIdata["email"], self.CGIdata["pass"], self.CGIdata["realname"], admin=1 )
+        usermanager.add_user( self.CGIdata["username"], self.CGIdata["email"], self.CGIdata["pass1"], self.CGIdata["realname"], admin=1 )
 
         print "User '%s' add." % self.CGIdata["username"]
         print "</pre>"
@@ -512,43 +587,6 @@ class PyLucid_setup:
 
     #__________________________________________________________________________________________
 
-    def setup_internal_pages( self ):
-        for page in internal_pages:
-            print "Insert page '%s' in table 'pages_internal'" % page["name"]
-            try:
-                self.db.insert( "pages_internal", page )
-            except Exception, e:
-                print "Error: '%s'" % e
-            print
-
-
-    def sql_dump( self ):
-        print "<h3>SQL (experimental!)</h3>"
-        if not self.CGIdata.has_key("sql_commands"):
-            self.print_backlink()
-            print '<form name="sql_dump" method="post" action="?sql_dump">'
-            print '<p>SQL command:<br/>'
-            print '<textarea name="sql_commands" cols="90" rows="25"></textarea><br/>'
-            print '<input type="submit" name="Submit" value="send" />'
-            print '</p></form>'
-            sys.exit()
-
-        self.print_backlink( "sql_dump" )
-        sql_commands = self.CGIdata["sql_commands"]
-        sql_commands = sql_commands.replace( "\r\n","\n" )
-        #~ sql_commands = sql_commands.replace( "\n","" )
-
-        self.execute( sql_commands )
-
-        print "<pre>"
-        sql_commands = cgi.escape( sql_commands )
-        print sql_commands
-        print "-"*80
-        print sql_commands.encode("String_Escape")
-        print "</pre>"
-
-    ###########################################################################################
-    ###########################################################################################
 
     def convert_locals( self ):
         print '<p><a href="?">back</a></p>'
@@ -637,6 +675,7 @@ class PyLucid_setup:
 
 if __name__ == "__main__":
     print "Content-type: text/html\n"
+    #~ print "<pre>"
     PyLucid_setup()
 
 

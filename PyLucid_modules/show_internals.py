@@ -9,9 +9,11 @@ Administration Sub-Menü : "show internals"
 
 __author__ = "Jens Diemer (www.jensdiemer.de)"
 
-__version__="0.1.2"
+__version__="0.1.3"
 
 __history__="""
+v0.1.3
+    - NEU: who-Befehl
 v0.1.2
     - Bei "Python Module Info" wird die Zeit angezeigt
 v0.1.1
@@ -280,6 +282,8 @@ class show_internals:
 
         print "</table>"
 
+    #_______________________________________________________________________
+
     def system_info( self ):
         """ Allgemeine System Informationen """
         self.menu()
@@ -320,6 +324,7 @@ class show_internals:
         print "</dl>"
 
         cmd_info( "uptime", "uptime" )
+        cmd_info( "lokal Angemeldete Benutzer", "who -H -u --lookup" )
         cmd_info( "disk", "df -T -h" )
         cmd_info( "RAM", "free -m" )
 
@@ -333,6 +338,7 @@ class show_internals:
             print "<dd>%s</dd>" % value
         print "</dl>"
 
+    #_______________________________________________________________________
 
     def sql_status( self ):
         self.menu()
@@ -395,6 +401,32 @@ class show_internals:
 
         print '<p><a href="%soptimize_sql_tables">optimize SQL tables</a></p>' % self.action_url
 
+
+    #_______________________________________________________________________
+    # Log Daten
+
+    def log_data( self ):
+        """ Logging Informationen anzeigen """
+        self.menu()
+        print "<hr>"
+
+        limit = 100 # Anzahl der Einträge die angezeigt werden sollen
+
+        result = self.db.select(
+            select_items    = ["timestamp", "sid", "user_name", "domain", "message","typ","status"],
+            from_table      = "log",
+            order           = ("timestamp","DESC"),
+            limit           = (0,limit)
+        )
+
+
+        print "<h3>log information (last %i)</h3>" % limit
+        print self.make_table_from_sql_select(
+            result,
+            id          = "internals_log_data",
+            css_class   = "internals_table"
+        )
+
     def make_table_from_sql_select( self, select_results, id, css_class ):
         """ Allgemeine Information um SQL-SELECT Ergebnisse als Tabelle zu erhalten """
         print '<table id="%s" class="%s">' % (id,css_class)
@@ -413,19 +445,6 @@ class show_internals:
             print "</tr>"
 
         print "</table>"
-
-    def log_data( self ):
-        """ Logging Informationen anzeigen """
-        self.menu()
-        print "<hr>"
-
-        limit = 100 # Anzahl der Einträge die angezeigt werden sollen
-        print "<h3>log information (last %i)</h3>" % limit
-        print self.make_table_from_sql_select(
-            self.log.get_last_logs( limit ),
-            id          = "internals_log_data",
-            css_class   = "internals_table"
-        )
 
     #_______________________________________________________________________
     # Funktionen

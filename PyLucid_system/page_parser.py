@@ -8,10 +8,18 @@ Der Parser füllt eine CMS Seite mit leben ;)
 Parsed die lucid-Tags/Funktionen, führt diese aus und fügt das Ergebnis in die Seite ein.
 """
 
-__version__="0.0.1"
+__version__="0.1.3"
 
 __history__="""
-v0.0.1
+v0.1.3
+    - textile Parser erhält nun auch die PyLucid-Objekt. page_msg ist hilfreich zum debuggen des Parsers ;)
+v0.1.2
+    - Bug 1297263: "Can't use textile-Markup (maximum recursion limit exceeded)":
+        Nun wird zuerst das Markup angewendet und dann erst die lucidTag's aufgelöst
+v0.1.1
+    - parser.handle_function(): toleranter wenn kein String vom Modul zurück kommt
+    - Versionsnummer geändert
+v0.1.0
     - Erste Version: Komplett neugeschrieben. Nachfolge vom pagerender.py
 """
 
@@ -36,6 +44,9 @@ class parser:
         Die Hauptfunktion.
         per re.sub() werden die Tags ersetzt
         """
+        if type(content)!=str:
+            return "Error! Content not string. Content is type %s" % cgi.escape(str(type(content)))
+
         #~ start_time = time.time()
         content = re.sub( "<lucidTag:(.*?)/?>", self.handle_tag, content )
         #~ self.page_msg( "Zeit (re.sub-lucidTag) :", time.time()-start_time )
@@ -50,6 +61,18 @@ class parser:
         """
         Abarbeiten eines <lucidTag:... />
         """
+        return_string = self.appy_tag( matchobj )
+        if type(return_string) != str:
+            self.page_msg("result of tag '%s' is not type string! Result: '%s'" % (
+                    matchobj.group(1), cgi.escape( str(return_string) )
+                )
+            )
+
+            return_string = str(return_string)
+
+        return return_string
+
+    def appy_tag( self, matchobj ):
         tag = matchobj.group(1)
         if tag in self.ignore_tag:
             # Soll ignoriert werden. Bsp.: script_duration, welches wirklich am ende
@@ -73,7 +96,12 @@ class parser:
         function_name = matchobj.group(1)
         function_info = matchobj.group(2)
 
-        return self.module_manager.run_function( function_name, function_info )
+        content = self.module_manager.run_function( function_name, function_info )
+        if type(content) != str:
+            content = "<p>[Content from module '%s' is not type string!] Content:</p>%s" % (
+                function_name, str(content)
+            )
+        return content
 
 
 
@@ -91,9 +119,13 @@ class render:
         self.tools      = PyLucid["tools"]
         self.db         = PyLucid["db"]
 
+
     def render( self, side_data ):
+
+        side_content = self.apply_markup( side_data["content"], side_data["markup"] )
+
         try:
-            CSS_content = "<style>%s</style>" % self.db.side_style_by_id( self.CGIdata["page_id"] )
+            CSS_content = '<style type="text/css">%s</style>' % self.db.side_style_by_id( self.CGIdata["page_id"] )
         except IndexError:
             self.page_msg( "Style (ID:%s) not found!" )
             CSS_content = ""
@@ -116,27 +148,37 @@ class render:
         else:
             self.parser.tag_data["robots"] = self.config.system.robots_tag["content_pages"]
 
-        side_content = self.parser.parse( side_data["content"] )
-
-        markup = side_data["markup"]
-
-        from PyLucid_system import tools
-        if markup == "textile":
-            try:
-                "textile Markup anwenden"
-                from PyLucid_system import tinyTextile
-                out = tools.out_buffer()
-                #~ tinyTextile.parser( sys.stdout ).parse( txt )
-                tinyTextile.parser( out ).parse( side_content )
-                side_content = out.get()
-            except Exception, e:
-                self.page_msg( "Can't use textile-Markup (%s)" % e )
-        elif markup == "none":
-            pass
-        else:
-            self.page_msg( "Markup '%s' not supported yet :(" % markup )
+        # lucidTag's und lucidFunction's auflösen
+        side_content = self.parser.parse( side_content )
 
         return side_content
+
+
+    def apply_markup( self, content, markup ):
+        """
+        Wendet das Markup auf den Seiteninhalt an
+        """
+        if markup == "textile":
+            # textile Markup anwenden
+            if self.config.system.ModuleManager_error_handling == True:
+                try:
+                    from PyLucid_system import tinyTextile
+                    out = self.tools.out_buffer()
+                    tinyTextile.parser( out, self.PyLucid ).parse( content )
+                    return out.get()
+                except Exception, e:
+                    self.page_msg( "Can't use textile-Markup (%s)" % e )
+            else:
+                from PyLucid_system import tinyTextile
+                out = self.tools.out_buffer()
+                tinyTextile.parser( out, self.PyLucid ).parse( content )
+                return out.get()
+        elif markup == "none":
+            return content
+        else:
+            self.page_msg( "Markup '%s' not supported yet :(" % markup )
+            return content
+
 
     def apply_template( self, side_content, template ):
         """

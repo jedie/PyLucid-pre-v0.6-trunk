@@ -68,9 +68,11 @@ den Client geschickt worden sein! Ansonsten zählt der Cookie-Print nicht mehr z
 einfach nur angezeigt ;)
 """
 
-__version__ = "v0.1.0"
+__version__ = "v0.1.1"
 
 __history__ = """
+v0.1.1
+    - Umstallung auf neue Art Log-Ausgaben zu machen
 v0.1.0
     - Großer Umbau: Diese Klasse ist nun nicht mehr allgemein Nutzbar, sondern an PyLucid
         angepasst, da es die PyLucid-Objekte direkt benutzt.
@@ -170,23 +172,26 @@ class sessionhandler:
         except KeyError:
             # Es gibt kein Session-Cookie, also gibt es keine gültige Session
             self.deleteCookie()
-            msg = "error;no client cookie found."
-            if self.verbose_log == True:    self.log.write( msg )
+            msg = "no client cookie found."
+            if self.verbose_log == True:
+                self.log.write( msg, "sessionhandling", "error" )
             if self.page_msg_debug == True:
                 self.page_msg( msg )
                 self.page_msg( "-"*30 )
             return
 
         if cookie_id == "":
-            self.status = "error;deleted Cookie found / Client not LogIn!"
-            if self.verbose_log==True: self.log.write( self.status )
+            self.status = "deleted Cookie found / Client not LogIn!"
+            if self.verbose_log==True:
+                self.log.write( self.status, "sessionhandling", "error" )
             return
 
         if len( cookie_id ) != 32:
             # Mit dem Cookie stimmt wohl was nicht ;)
             self.deleteCookie()
-            msg = "error;wrong Cookie len: %s !" % len( cookie_id )
-            if self.verbose_log == True: self.log.write( msg )
+            msg = "wrong Cookie len: %s !" % len( cookie_id )
+            if self.verbose_log == True:
+                self.log.write( msg, "sessionhandling", "error" )
             if self.page_msg_debug == True:
                 self.page_msg( msg )
                 self.page_msg( "-"*30 )
@@ -197,8 +202,9 @@ class sessionhandler:
         except Exception, e:
             # Es gibt keine Daten zur ID / Falsche Daten vorhanden
             self.deleteCookie()
-            msg = "error;read_session for id '%s' error: %s" % (cookie_id,e)
-            if self.verbose_log == True: self.log.write( msg )
+            msg = "read_session for id '%s' error: %s" % (cookie_id,e)
+            if self.verbose_log == True:
+                self.log.write( msg, "sessionhandling", "error" )
             if self.page_msg_debug == True:
                 self.page_msg( msg )
                 self.page_msg( "-"*30 )
@@ -217,8 +223,9 @@ class sessionhandler:
         # Aktualisiert Cookie
         self.writeCookie( self.ID )
 
-        msg = "OK;found Session: %s" % self.ID
-        if self.verbose_log == True:    self.log.write( msg )
+        msg = "found Session: %s" % self.ID
+        if self.verbose_log == True:
+            self.log.write( msg, "sessionhandling", "OK" )
         if self.page_msg_debug == True:
             self.page_msg( msg )
             self.page_msg( "-"*30 )
@@ -237,8 +244,9 @@ class sessionhandler:
             )
 
         # Session ist OK
-        msg = "OK;Session is OK\nSession-Data %.2fSec old" % (time.time()-DB_data["timestamp"])
-        if self.verbose_log == True:    self.log.write( msg )
+        msg = "Session is OK\nSession-Data %.2fSec old" % (time.time()-DB_data["timestamp"])
+        if self.verbose_log == True:
+            self.log.write( msg, "sessionhandling", "OK" )
         if self.page_msg_debug == True: self.page_msg( msg )
 
         self.ID                 = cookie_id
@@ -323,7 +331,7 @@ class sessionhandler:
             }
         )
         #~ self.debug_session_data()
-        self.log.write( "OK;created Session." )
+        self.log.write( "created Session.", "sessionhandling", "OK" )
 
     def update_session( self ):
         "Aktualisiert die Session-Daten"
@@ -348,7 +356,7 @@ class sessionhandler:
         #~ self.debug_session_data()
 
         if self.verbose_log == True:
-            self.log.write( "OK;update Session: ID:%s" % self.ID )
+            self.log.write( "update Session: ID:%s" % self.ID, "sessionhandling", "OK" )
 
     def read_from_DB( self, session_id ):
         "Liest Sessiondaten des Users mit der >session_id<"
