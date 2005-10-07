@@ -11,6 +11,8 @@ Bsp.:
 __version__="0.2.5"
 
 __history__="""
+v0.2.6
+    - lucidFunction() erwartet nun auch function_info vom ModulManager
 v0.2.5
     - Umbau für neuen Module-Manager
     - Ab jetzt ist es ein Plugin ;)
@@ -72,7 +74,6 @@ class RSS:
         Diese Funktion wird direkt vom Modul-Manager ausgeführt.
         """
         url = function_info
-        sys.exit()
         try:
             import socket
             socket.setdefaulttimeout(5)

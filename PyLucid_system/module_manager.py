@@ -9,9 +9,11 @@ Module Manager
 
 """
 
-__version__="0.2.1"
+__version__="0.2.2"
 
 __history__="""
+v0.2.2
+    - Bessere Fehlerausgabe bei einem Fehler in der lucidFunction-Parameterübergabe
 v0.2.1
     - NEU: ModulManager config "sys_exit": Damit ein Modul auch wirklich einen sys.exit() ausführen kann.
 v0.2
@@ -347,6 +349,8 @@ class module_manager:
         if function_info != None:
             # Informationen aus dem <lucidFunction>-Tag
             method_arguments = { "function_info": function_info }
+            if self.class_debug == True:
+                self.page_msg("function_info:", function_info)
         else:
             method_arguments = {}
 
@@ -428,6 +432,18 @@ class module_manager:
                 real_method_arguments = args[0][1:]
                 argcount = len(real_method_arguments)
 
+                if not method_properties.has_key("get_CGI_data"):
+                    # Fehler bei lucidFunction-Parameter übergabe
+                    raise run_module_error(
+                        "ModuleManager error: \
+                        %s() takes exactly %s arguments %s, \
+                        but %s given: %s \
+                        --- Check the real arguments in the method!" % (
+                            unbound_method.__name__, argcount, real_method_arguments,
+                            len(method_arguments), str(method_arguments.keys()),
+                        )
+                    )
+
                 # Bessere Fehlermeldung generieren, wenn die von der Methode per get_CGI_data definierten Argumente
                 # nicht in den CGI-Daten vorhanden sind.
                 raise run_module_error(
@@ -441,6 +457,17 @@ class module_manager:
                         len(method_arguments), str(method_arguments.keys()),
                     )
                 )
+
+        def run_error(module_name, method, msg):
+            if direct_out != True:
+                redirector.get() # stdout wiederherstellen
+
+            msg = "[Can't run '%s.%s': %s]" % (module_name, method, msg)
+
+            if self.config.system.ModuleManager_error_handling == True:
+                raise run_module_error(msg)
+            else:
+                raise Exception(msg)
 
         # Methode aus Klasse erhalten
         if self.config.system.ModuleManager_error_handling == True:
@@ -460,6 +487,7 @@ class module_manager:
             redirector = self.tools.redirector()
 
 
+
         # Methode "ausführen"
         try:
             direct_output = run(method_arguments)
@@ -467,21 +495,14 @@ class module_manager:
             if method_properties.has_key("sys_exit") and method_properties["sys_exit"] == True:
                 # Modul macht evtl. einen sys.exit() (z.B. beim direkten Download, MySQLdump)
                 sys.exit()
-            if direct_out != True:
-                redirect_out = redirector.get() # stdout wiederherstellen
+            if direct_out != True: redirect_out = redirector.get() # stdout wiederherstellen
             # Beim z.B. page_style_link.print_current_style() wird ein sys.exit() ausgeführt
             self.page_msg("Error in Modul %s.%s: A Module can't use sys.exit()!" % (module_name, method))
+            direct_output = ""
+        except KeyError, e:
+            run_error(module_name, method, "KeyError: %s" % e)
         except Exception, e:
-            if direct_out != True:
-                redirector.get() # stdout wiederherstellen
-
-            msg = "[Can't run '%s.%s': %s]" % ( module_name, method, e )
-
-            if self.config.system.ModuleManager_error_handling == True:
-                raise run_module_error(msg)
-            else:
-                raise Exception(msg)
-
+            run_error(module_name, method, e)
 
         ##________________________________________________________________________________________
         ## Ausgaben verarbeiten

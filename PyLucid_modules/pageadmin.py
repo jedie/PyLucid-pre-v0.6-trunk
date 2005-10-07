@@ -10,9 +10,11 @@ Alles was mit dem ändern von Inhalten zu tun hat:
 
 __author__ = "Jens Diemer (www.jensdiemer.de)"
 
-__version__="0.3"
+__version__="0.3.1"
 
 __history__="""
+v0.3.1
+    - "CGI_dependent_actions" bei new_page waren falsch.
 v0.3
     - page_edit/save nutzt nun die allgemeine Archivierungs Methode archive_page()
     - Vereinheitlichung bei den HTML-Form-Buttons
@@ -89,8 +91,13 @@ class pageadmin:
             "must_login"    : True,
             "must_admin"    : True,
             "CGI_dependent_actions" : {
-                "preview"   : {"CGI_laws": {"preview": -1} },
-                "save_new"  : {"CGI_laws": {"save": -1} },
+                "preview": {
+                    "CGI_laws"      : {"preview": "preview"}, # Submit-input-Button
+                    "get_CGI_data"  : {"page_id": int},
+                },
+                "save_new": {
+                    "CGI_laws"      : {"save": "save"}, # Submit-input-Button
+                },
             }
         },
         "select_del_page" : {

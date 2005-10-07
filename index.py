@@ -733,7 +733,7 @@ class LucidRender:
         else:
             # User ist nicht eingeloggt
             if page_permitViewPublic != 1:
-                self.page_msg( "401 Unauthorized. You must login to see '%s'" % self.CGIdata["REQUEST_URI"] )
+                self.page_msg("401 Unauthorized. You must login to see this page!")
             else:
                 # Seite ist öffentlich
                 return

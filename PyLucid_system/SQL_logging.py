@@ -5,9 +5,11 @@
 Allgemeiner SQL-Logger
 """
 
-__version__ = "v0.0.5"
+__version__ = "v0.0.6"
 
 __history__ = """
+v0.0.6
+    - Fehlerabfrage, wenn nicht in sql log table geschrieben werden kann
 v0.0.5
     - Bug: Tabellenname (sql_tablename) war Hardcoded.
 v0.0.4
@@ -92,19 +94,22 @@ class log:
         # Alte Log-Einträge löschen
         self.delete_old_logs()
 
-        self.db.insert(
-                table = "log", # Prefix wird bei db.insert eingefügt
-                data  = {
-                    "timestamp" : self.tools.convert_time_to_sql( time.time() ),
-                    "sid"       : self.client_sID,
-                    "user_name" : self.client_user_name,
-                    "ip"        : self.CGIdata["client_ip"],
-                    "domain"    : self.CGIdata["client_domain"],
-                    "message"   : log_message,
-                    "typ"       : type,
-                    "status"    : status,
-                }
-            )
+        try:
+            self.db.insert(
+                    table = "log", # Prefix wird bei db.insert eingefügt
+                    data  = {
+                        "timestamp" : self.tools.convert_time_to_sql( time.time() ),
+                        "sid"       : self.client_sID,
+                        "user_name" : self.client_user_name,
+                        "ip"        : self.CGIdata["client_ip"],
+                        "domain"    : self.CGIdata["client_domain"],
+                        "message"   : log_message,
+                        "typ"       : type,
+                        "status"    : status,
+                    }
+                )
+        except Exception, e:
+            self.page_msg("Can't write to SQL log table: %s" % e)
 
     def delete_old_logs( self ):
         "Löscht veraltete Log-Einträge in der DB"

@@ -11,9 +11,11 @@ eingebunden kann es per lucid-"IncludeRemote"-Tag:
 <lucidFunction:IncludeRemote>/cgi-bin/PyLucid/Menu.py?page_name=<lucidTag:page_name/></lucidFunction>
 """
 
-__version__="0.0.11"
+__version__="0.0.12"
 
 __history__="""
+v0.0.12
+    - where_filter aus main_menu übernommen, zum beachten von "showlinks" und "permitViewPublic"
 v0.0.11
     - Links werden nun richtig mit urllib.quote_plus() behandelt
     - Anpassung an neuen ModuleManager
@@ -82,6 +84,17 @@ class sub_menu:
         self.config         = PyLucid["config"]
         self.preferences    = PyLucid["preferences"]
 
+    def where_filter( self, where_rules ):
+        """
+        Erweitert das SQL-where Statement um das Rechtemanagement zu berücksichtigen
+        selbe funktion ist auch in main_menu vorhanden
+        """
+        where_rules.append(("showlinks",1))
+        if not self.session.has_key("isadmin") or self.session["isadmin"]!=True:
+            where_rules.append(("permitViewPublic",1))
+
+        return where_rules
+
     def lucidTag( self ):
         self.url_entry  = self.preferences["subMenu"]["before"] # List Item Anfang, default: <li>
         self.url_entry += '<a href="%s' % self.link_url
@@ -99,7 +112,7 @@ class sub_menu:
         menu_data = self.db.select(
                 select_items    = ["name","title"],
                 from_table      = "pages",
-                where           = ("parent",current_page_id),
+                where           = self.where_filter( [("parent",current_page_id)] ),
                 order           = ("position","ASC")
             )
 

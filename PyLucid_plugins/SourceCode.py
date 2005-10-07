@@ -12,9 +12,11 @@ somit alle zusätzlichen " " -> "&nbsp;" und "\n" -> "<br/>" umwandlung
 sparen. Das Klappt aus mit allen Browsern super, nur nicht mit dem IE ;(
 """
 
-__version__="0.2.3"
+__version__="0.2.4"
 
 __history__="""
+v0.2.4
+    - lucidFunction() erwartet nun auch function_info vom ModulManager
 v0.2.3
     - Python Source Code Parser ausgelagert nach sourcecode_parser.py, damit er auch
         mit tinyTextile genutzt werden kann
@@ -58,7 +60,8 @@ class SourceCode:
     def __init__( self, PyLucid ):
         self.tools  = PyLucid["tools"]
 
-    def lucidFunction( self, filename ):
+    def lucidFunction( self, function_info ):
+        filename = function_info # Daten aus dem <lucidFunction>-Tag
         filepath = os.environ["DOCUMENT_ROOT"] + filename
         filepath = os.path.normpath( filepath )
 

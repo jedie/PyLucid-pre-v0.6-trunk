@@ -7,9 +7,11 @@ Bsp.:
 <lucidFunction:IncludeRemote>http://...</lucidFunction>
 """
 
-__version__="0.0.1"
+__version__="0.0.2"
 
 __history__="""
+v0.0.2
+    - Bug 1315600: ModuleManager änderung: "lucidFunction" Parameter übergabe erfolgt immer mit function_info!
 v0.0.1
     - Source aus dem alten pagerender.py übernommen und angepasst
     - re-Filter verbessert
@@ -41,11 +43,11 @@ class IncludeRemote:
         # Es werden keine PyLucid-Objekte ben�tigt...
         pass
 
-    def lucidFunction( self, URL ):
+    def lucidFunction( self, function_info ):
         """
         Unterscheidet zwischen Lokalen PyLucid-Skripten und echten URL-Abfragen
         """
-
+        URL = function_info # Inhalt der <lucidFunction>-Tag
         try:
             socket.setdefaulttimeout(5)
         except AttributeError:

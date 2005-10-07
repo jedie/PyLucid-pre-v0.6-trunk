@@ -10,9 +10,11 @@ Das Menü wird eingebunden mit dem lucid-Tag:
 <lucidTag:main_menu/>
 """
 
-__version__="0.0.11"
+__version__="0.0.12"
 
 __history__="""
+v0.0.12
+    - Bug in where_filter() behoben, sodas "permit view public" wirklich beachtet wird
 v0.0.11
     - Es werden nurnoch Seiten angezeigt, bei denen 'showlinks' gesetzt ist.
 v0.0.10
@@ -118,10 +120,11 @@ class main_menu:
     def where_filter( self, where_rules ):
         """
         Erweitert das SQL-where Statement um das Rechtemanagement zu berücksichtigen
+        Selbe Funktion ist auch bei sub_menu vorhanden
         """
-        where_rules.append( ("showlinks",1) )
-        if not self.session.has_key( "isadmin" ):
-            where_rules.append( ("permitViewPublic",1) )
+        where_rules.append(("showlinks",1))
+        if not self.session.has_key("isadmin") or self.session["isadmin"]!=True:
+            where_rules.append(("permitViewPublic",1))
 
         return where_rules
 
