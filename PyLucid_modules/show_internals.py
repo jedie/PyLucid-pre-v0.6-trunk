@@ -268,6 +268,9 @@ class show_internals:
         print "<tr><td>config.system.poormans_modrewrite</td>"
         print "<td>: %s</td></tr>" % self.config.system.poormans_modrewrite
 
+        print "<tr><td>config.system.page_ident</td>"
+        print "<td>: '%s'</td></tr>" % self.config.system.page_ident
+
         print "<tr><td>config.system.script_filename</td>"
         print "<td>: '%s'</td></tr>" % self.config.system.script_filename
 

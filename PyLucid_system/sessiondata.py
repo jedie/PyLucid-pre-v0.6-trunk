@@ -79,21 +79,37 @@ class CGIdata:
         gemacht ;)
         """
 
-        FieldStorageData = cgi.FieldStorage()
+        if os.environ.has_key("CONTENT_LENGTH"):
+            # Ist nur vorhanden, wenn der Client POST Daten schickt.
+            length = int(os.environ["CONTENT_LENGTH"])
+            if length>65534:
+                print "Content-type: text/html; charset=utf-8\r\n"
+                print "<h1>Error: Too much POST/GET content!</h1>"
+                print "Content length = %s" % length
+                sys.exit()
+            #~ else:
+                #~ self.page_msg( "Content length = %s" % length )
 
-        # POST Daten auswerten
-        for i in FieldStorageData.keys():
-            self.data[i] = FieldStorageData.getvalue(i)
+            FieldStorageData = cgi.FieldStorage()
+
+            # POST Daten auswerten
+            for i in FieldStorageData.keys():
+                self.data[i] = FieldStorageData.getvalue(i)
 
         if os.environ.has_key('QUERY_STRING'):
             # GET URL-Parameter parsen
-            for i in os.environ['QUERY_STRING'].split("&"):
-                i=i.split("=")
-                if len(i)==1:
-                    if i[0]!="":
-                        self.data[ i[0] ] = ""
+            for item in os.environ['QUERY_STRING'].split("&"):
+                size = len(item)
+                if size>10000:
+                    self.page_msg( "CGI Error, GET Parameter size overload: '%s...'" % item[:10])
+                    continue
+
+                item = item.split("=",1)
+                if len(item)==1:
+                    if item[0]!="":
+                        self.data[ item[0] ] = ""
                 else:
-                    self.data[ i[0] ] = i[1]
+                    self.data[ item[0] ] = item[1]
 
         #~ self.page_msg( self.data )
 
@@ -183,6 +199,10 @@ class CGIdata:
             pass
         try:
             self.page_msg( 'os.environ["REQUEST_URI"]:', os.environ["REQUEST_URI"] )
+        except:
+            pass
+        try:
+            self.page_msg( 'os.environ["CONTENT_LENGTH"]:', os.environ["CONTENT_LENGTH"] )
         except:
             pass
         self.page_msg( "-"*30 )

@@ -106,8 +106,7 @@ if base64format == True:
     import base64
 
 
-#~ debug = False
-#~ debug = True
+
 
 
 class sessionhandler:
@@ -120,12 +119,12 @@ class sessionhandler:
     http://www.python-forum.de/viewtopic.php?p=19523#19523
     """
 
-    session_data_must_keys = ("isadmin","user_id","user")
-
-    def __init__ ( self, PyLucid, page_msg_debug ):#db_cursor, sql_tablename, log_fileobj, timeout_sec=1800, CookieName="session_id", verbose_log = False ):
+    def __init__ ( self, PyLucid, page_msg_debug ):
         self.db             = PyLucid["db"]
         self.log            = PyLucid["log"]
         self.page_msg       = PyLucid["page_msg"]
+        self.config         = PyLucid["config"]
+        self.CGIdata        = PyLucid["CGIdata"]
 
         self.page_msg_debug = page_msg_debug
 
@@ -159,11 +158,16 @@ class sessionhandler:
 
         self.RAW_session_data_len   = -1
 
-        self.ID = False # =False -> es existiert keine Session
-        self.session_data = {}
+        self.ID = False
+        self.session_data = {
+            "isadmin"   : False,
+            "user_id"   : False,
+            "user"      : False,
+        }
 
     def detectSession( self ):
         "Prüft ob eine Session schon besteht"
+
         if self.page_msg_debug == True:
             self.page_msg( "-"*30 )
 
@@ -171,7 +175,6 @@ class sessionhandler:
             cookie_id = self.readCookie()
         except KeyError:
             # Es gibt kein Session-Cookie, also gibt es keine gültige Session
-            self.deleteCookie()
             msg = "no client cookie found."
             if self.verbose_log == True:
                 self.log.write( msg, "sessionhandling", "error" )
@@ -210,18 +213,21 @@ class sessionhandler:
                 self.page_msg( "-"*30 )
             return
 
-        for key in self.session_data_must_keys:
+        if self.page_msg_debug == True:
+            self.debug()
+
+        # Session-Daten auf Vollständigkeit prüfen
+        for key in ("isadmin","user_id","user"):
             if not self.session_data.has_key( key ):
                 # Mit den Session-Daten stimmt was nicht :(
-                self.page_msg( "Error in Session Data: Key %s not exists." % key )
-                self.debug_session_data()
-                self.page_msg( "Your logged out!" )
+                msg = "Error in Session Data: Key %s not exists." % key
+                self.log.write( msg, "sessionhandling", "error" )
+                if self.page_msg_debug == True:
+                    self.page_msg( msg )
+                    self.debug_session_data()
                 self.delete_session()
-                self.page_msg( "-"*30 )
+                self.page_msg( "Your logged out!" )
                 return
-
-        # Aktualisiert Cookie
-        self.writeCookie( self.ID )
 
         msg = "found Session: %s" % self.ID
         if self.verbose_log == True:
@@ -273,6 +279,28 @@ class sessionhandler:
         # Aktualisiert ID global
         self.ID = session_id
 
+    def delete_session( self ):
+        "Löscht die aktuelle Session"
+        if self.ID == False:
+            self.status = "OK;Client is LogOut, can't LogOut a second time :-)!"
+            return
+
+        self.deleteCookie()
+
+        if self.page_msg_debug == True: self.debug_session_data()
+        self.db.delete(
+            table = self.sql_tablename,
+            where = ("session_id",self.ID)
+        )
+        if self.page_msg_debug == True: self.debug_session_data()
+
+        oldID = self.ID
+
+        # Interne-Session-Variablen rücksetzten
+        self.set_default_values()
+
+        self.status = "OK;delete Session data / LogOut for '%s'" % oldID
+
     def write_session_cookie( self ):
         "Generiert eine Session ID und speichert diese als Cookie"
         session_id = md5.new( str(time.time()) + os.environ["REMOTE_ADDR"] ).hexdigest()
@@ -293,17 +321,28 @@ class sessionhandler:
 
     def readCookie( self ):
         "liest Cookie"
+        #~ if self.page_msg_debug == True: self.page_msg( os.environ["HTTP_COOKIE"] )
         self.Cookie.load(os.environ["HTTP_COOKIE"])
+        if self.page_msg_debug == True:
+            self.page_msg("readCookie: '%s'" % self.Cookie[self.CookieName].value)
         return self.Cookie[self.CookieName].value
 
     def writeCookie( self, Text, expires=None ):
-        "speichert Cookie"
-        if expires==None: expires=self.timeout_sec
+        """
+        speichert Cookie
+        Es wird kein 'expires' gesetzt, somit ist der Cookie gültig/vorhanden bis der
+        Browser beendet wurde.
+        """
+        #~ if expires==None: expires=self.timeout_sec
         self.Cookie[self.CookieName] = Text
-        self.Cookie[self.CookieName]["path"] = "/"
-        self.Cookie[self.CookieName]["expires"] = expires
+        self.Cookie[self.CookieName]["path"] = self.config.system.poormans_url
+
+        #~ self.Cookie[self.CookieName]["expires"] = expires
+
         # Cookie an den Browser "schicken"
         print self.Cookie[self.CookieName]
+        if self.page_msg_debug == True:
+            self.page_msg( "writeCookie:", self.Cookie[self.CookieName] )
 
     def deleteCookie( self ):
         self.writeCookie( "" , 0)
@@ -330,8 +369,10 @@ class sessionhandler:
                 "session_data"  : session_data,
             }
         )
-        #~ self.debug_session_data()
         self.log.write( "created Session.", "sessionhandling", "OK" )
+        if self.page_msg_debug == True:
+            self.page_msg("insert session data for:", session_id)
+            self.debug_session_data()
 
     def update_session( self ):
         "Aktualisiert die Session-Daten"
@@ -352,11 +393,13 @@ class sessionhandler:
             where   = ("session_id", self.ID),
             limit   = 1,
         )
-
         #~ self.debug_session_data()
 
         if self.verbose_log == True:
             self.log.write( "update Session: ID:%s" % self.ID, "sessionhandling", "OK" )
+        if self.page_msg_debug == True:
+            self.page_msg("update Session: ID:%s" % self.ID)
+            self.debug_session_data()
 
     def read_from_DB( self, session_id ):
         "Liest Sessiondaten des Users mit der >session_id<"
@@ -369,8 +412,7 @@ class sessionhandler:
             )
         #~ if DB_data == ():
 
-        if self.page_msg_debug == True:
-            self.page_msg( "DB_data:",DB_data )
+        #~ if self.page_msg_debug == True: self.page_msg( "DB_data:",DB_data )
         #~ if len(DB_data) != 1:
             #~ raise "More than one Session in DB!", len(DB_data)
 
@@ -381,6 +423,8 @@ class sessionhandler:
         if base64format == True:
             DB_data["session_data"] = base64.b64decode( DB_data["session_data"] )
         DB_data["session_data"] = pickle.loads( DB_data["session_data"] )
+
+        if self.page_msg_debug == True: self.debug_session_data()
 
         return DB_data
 
@@ -402,27 +446,7 @@ class sessionhandler:
             print "Delete Old Session error: %s" % e
             sys.exit()
 
-        #~ self.debug_session_data()
-
-    def delete_session( self ):
-        "Löscht die aktuelle Session"
-        if self.ID == False:
-            self.status = "OK;Client is LogOut, can't LogOut a second time :-)!"
-            return
-
-        self.deleteCookie()
-
-        self.db.delete(
-            table = self.sql_tablename,
-            where = ("session_id",self.ID)
-        )
-
-        oldID = self.ID
-
-        # Interne-Session-Variablen rücksetzten
-        self.set_default_values()
-
-        self.status = "OK;delete Session data / LogOut for '%s'" % oldID
+        if self.page_msg_debug == True: self.debug_session_data()
 
     #____________________________________________________________________________________________
 
@@ -431,16 +455,17 @@ class sessionhandler:
             return
 
         import inspect
+        stack_info = inspect.stack()[2][4][0]
 
         try:
             RAW_db_data = self.db.select(
-                select_items    = ["session_data"],
+                select_items    = ['timestamp', 'session_data','session_id'],
                 from_table      = self.sql_tablename,
                 where           = [("session_id",self.ID)]
-            )[0]["session_data"]
-            self.page_msg( "Debug from %s: %s" % (inspect.stack()[-2][4][0], RAW_db_data) )
+            )[0]
+            self.page_msg( "Debug from %s: %s<br />" % (stack_info, RAW_db_data) )
         except Exception, e:
-            self.page_msg( "Debug-Error from %s: %s" % (inspect.stack()[-2][4][0],e) )
+            self.page_msg( "Debug-Error from %s: %s" % (stack_info,e) )
             #~ for i in inspect.stack(): self.page_msg( i )
 
     #____________________________________________________________________________________________
@@ -468,29 +493,32 @@ class sessionhandler:
 
     def debug( self ):
         "Zeigt alle Session Informationen an"
-        try:
-            import inspect
-            # PyLucid's page_msg nutzen
-            self.page_msg( "-"*30 )
-            self.page_msg(
-                "Session Debug (from '%s' line %s):" % (inspect.stack()[1][1][-20:], inspect.stack()[1][2])
-            )
 
-            self.page_msg( "len:", len( self.session_data ) )
-            for k,v in self.session_data.iteritems():
-                self.page_msg( "%s - %s" % (k,v) )
-            self.page_msg( "-"*30 )
-        except:
-            # Normale Debug-Informationen
-            print "Content-type: text/html\n"
-            print "<h1>Session Debug:</h1>"
-            print "<pre>"
-            for k,v in self.session_data.iteritems():
-                print k,"-",v
-            print "</pre><hr>"
+        import inspect
+        # PyLucid's page_msg nutzen
+        self.page_msg( "-"*30 )
+        self.page_msg(
+            "Session Debug (from '%s' line %s):" % (inspect.stack()[1][1][-20:], inspect.stack()[1][2])
+        )
 
+        self.page_msg( "len:", len( self.session_data ) )
+        for k,v in self.session_data.iteritems():
+            self.page_msg( "%s - %s" % (k,v) )
+        self.page_msg("ID:", self.ID)
+        self.page_msg( "-"*30 )
 
-
+    def debug_last(self):
+        """ Zeigt die letzten Einträge an """
+        import inspect
+        self.page_msg(
+            "Session Debug (from '%s' line %s):" % (inspect.stack()[1][1][-20:], inspect.stack()[1][2])
+        )
+        info = self.db.select( ["timestamp","session_id"], "session_data",
+            limit=(0,5),
+            order=("timestamp","DESC"),
+        )
+        for item in info:
+            self.page_msg(item)
 
 
 

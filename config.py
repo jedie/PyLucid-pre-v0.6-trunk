@@ -1,9 +1,11 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
 
-__version__="0.0.5"
+__version__="0.0.6"
 
 __history__="""
+v0.0.6
+    - Obsolete: "available_markups" wird unnötig, weil es in der Tabelle 'markups' steht.
 v0.0.5
     - Änderung: Pfade müßen nun nicht mehr per Hand eingetragen werden!
 v0.0.4
@@ -66,15 +68,6 @@ class system:
         "internal_pages"    : "noindex"
     }
 
-    # Pfad zur Ralf Mieke's md5.js
-    # http://www.miekenet.de
-    # http://aktuell.de.selfhtml.org/artikel/javascript/md5/
-    md5javascript = "/PyLucid_JS/md5.js"
-
-    # Pfad zur PyLucid md5manager.js Datei
-    # Wird für den Login benötigt!!!
-    md5manager = "/PyLucid_JS/md5manager.js"
-
     # Wird gesetzt sobald es erforderlich ist.
     # Ist die ID der Usergruppe "PyLucid_internal"
     # Damit sind die Internen Seiten in der DB makiert
@@ -126,9 +119,6 @@ dbconf = {
     "dbTablePrefix"     : 'lucid_',
     "dbdatetime_format" : '%Y-%m-%d %H:%M:%S', # SQL-Datetime-String-Format
 }
-
-
-available_markups = ["none","textile"]
 
 
 

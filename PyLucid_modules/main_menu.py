@@ -216,7 +216,9 @@ class main_menu:
                 if menuitem["id"] == higher_level_parent:
                     # Es wurde der Menüpunkt erreicht, der das Untermenü "enthält",
                     # deswegen kommt ab hier erstmal das Untermenü rein
+                    result += self.preferences["mainMenu"]["before"] + "\n"
                     result += self.make_menu( menulevel+1, link  )
+                    result += self.preferences["mainMenu"]["after"] + "\n"
 
         #~ mainMenu - {'begin': '<ul>', 'finish': '</ul>', 'after': '</li>', 'currentAfter': '', 'currentBefore': '', 'before': '<li>'}
         # List Ende, default: </ul>

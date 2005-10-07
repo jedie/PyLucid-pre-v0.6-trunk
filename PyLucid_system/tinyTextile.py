@@ -16,9 +16,13 @@ http://www.solarorange.com/projects/textile/mtmanual_textile2.html
 
 __author__ = "Jens Diemer (www.jensdiemer.de)"
 
-__version__="0.2.1"
+__version__="0.2.2"
 
 __history__="""
+v0.2.2
+    - *Fettschrift* nun auch bei *Teilen mit Leerzeichen* erlaubt, aber nicht über mehrere Zeilen
+    - Durch bessere Erkennung des Ende einer URL sind kombination möglich mit <small> möglich
+        Bsp.: --"text":http://wow.de-- oder --http://www.heise.de--
 v0.2.1
     - Codeerzeugung bei Listen etwas verbessert (newline eingefügt)
 v0.2.0
@@ -71,10 +75,6 @@ class parser:
                 r"\Ah(\d)\. +(.*)(?us)",
                 r"<h\1>\2</h\1>"
             ],
-            [ # Sourcecode Hightligting
-                r"\[sc (.*?)\](?us)",
-                self.do_sourcecode
-            ],
         ])
 
         # Regeln für Inlineelemente
@@ -84,15 +84,15 @@ class parser:
                 r"<small>\1</small>"
             ],
             [ # Fettschrift - Bsp.: Das Wort ist in *fett* geschrieben.
-                r"\*([^* ]+?)\*(?uism)",
+                r"\*([^*\n]+?)\*(?uism)",
                 r"<strong>\1</strong>"
             ],
             [ # img-Tag - Bsp.: !/Bilder/MeinBild.jpg!
-                r'\!(.+?)\!(?uis)',
+                r'\!([^!\n]+?)\!(?uis)',
                 r'<img src="\1">'
             ],
             [ # Link + LinkText - Bsp.: "LinkText":http://www.beispiel.de
-                r'"([^"]+?)":(\S+)',
+                r'"([^"]+?)":([^\s\<]+)',
                 r'<a href="\2">\1</a>'
             ],
             [ # interne PyLucid Links - Bsp.: Das ist ein [[InternerLink]] zur Seite InternerLink ;)
@@ -102,13 +102,13 @@ class parser:
             [ # Link alleine im Text - Bsp.: Das wird ein Link: http://www.beispiel.de weil es eine URL ist
                 r'''
                     (?<!=") # Ist noch kein HTML-Link
-                    (?P<url>(http|ftp)://(\S+))
+                    (?P<url>(http|ftp)://([^\s\<]+))
                     (?uimx)
                 ''',
                 r'<a href="\g<url>">\g<url></a>'
             ],
             [ # EMails
-                r'mailto:(\S+)',
+                r'mailto:([^\s\<]+)',
                 r'<a href="mailto:\1">\1</a>'
             ],
         ])
@@ -292,7 +292,7 @@ class parser:
         #~ self.page_msg(block[0], block)
 
         if block[0] in ("*","#"):
-            # Aktueller Block ist eine eine Liste
+            # Aktueller Block ist eine Liste
             self.build_list(block)
             return
 
@@ -307,11 +307,6 @@ class parser:
         # Kein Blockelement gefunden -> Formatierung des Absatzes
         block = block.strip().replace("\n", "<br />" + self.newline)
         self.out.write("<p>%s</p>" % block + self.newline)
-
-    def do_sourcecode(self, matchobj):
-        "Source Code-File der mittels PyLucid/system/SourceCode.py dagestellt werden soll"
-        # ist nocht nicht fertig :(
-        return "**** PyLucid/system/SourceCode.py %s ****" % matchobj.group(1)
 
     def build_list(self, listitems):
         "Erzeugt eine Liste aus einem Absatz"
@@ -341,7 +336,7 @@ class parser:
                 write(deep - currentlen, post_tag, spacer(deep))
                 deep = currentlen
 
-            self.out.write("%s<li>%s</li>%s" % (spacer(deep), item[1],self.newline))
+            self.out.write("%s<li>%s</li>%s" % (spacer(deep), item[1], self.newline))
 
         for i in range(deep):
             self.out.write(post_tag)

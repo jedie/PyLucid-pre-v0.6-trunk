@@ -9,9 +9,12 @@ __author__  = "Jens Diemer (www.jensdiemer.de)"
 __license__ = "GNU General Public License (GPL)"
 __url__     = "http://www.PyLucid.org"
 
-__version__="0.2"
+__version__="0.2.1"
 
 __history__="""
+v0.2.1
+    - Nutzt nun self.db.print_internal_page()
+    - Nutzt "get_CGI_data"
 v0.2
     - Führt eine einfache Gewichtung der Ergebnisse durch, dabei werden die Meta-Daten
         der Seite herran gezogen.
@@ -35,10 +38,12 @@ class search:
         "lucidTag" : {
             "must_login"    : False,
             "must_admin"    : False,
+            "get_CGI_data"  : {"search_string": str},
         },
         "do_search"       : {
             "must_login"    : False,
             "must_admin"    : False,
+            "get_CGI_data"  : {"search_string": str},
         },
     }
 
@@ -48,33 +53,30 @@ class search:
         self.page_msg   = PyLucid["page_msg"]
         self.log        = PyLucid["log"]
 
-    def lucidTag(self):
-        internal_page = self.db.get_internal_page("search_form")['content']
+    def lucidTag(self, search_string=""):
 
-        if self.CGIdata.has_key("search_string"):
-            old_search_string = cgi.escape(self.CGIdata["search_string"].replace('"',"'"))
-        else:
-            old_search_string = ""
+        search_string = cgi.escape(search_string).replace('"',"'")
 
-        print internal_page % {
-            "url"               : self.action_url + "do_search",
-            "old_search_string" : old_search_string
-        }
+        self.db.print_internal_page(
+            internal_page_name = "search_form",
+            page_dict = {
+                "url"               : self.action_url + "do_search",
+                "old_search_string" : search_string
+            }
+        )
 
-    def do_search(self):
+    def do_search(self, search_string=""):
         start_time = time.time()
         print "<h2>search v%s</h2>" % __version__
 
         self.print_last_search_words()
 
-        try:
-            RAW_search_string = self.CGIdata["search_string"]
-        except KeyError:
+        if search_string == "":
             self.page_msg("No search string found.")
             self.lucidTag()
             return
 
-        search_words = self.filter_search_string(RAW_search_string)
+        search_words = self.filter_search_string(search_string)
         if search_words == []:
             # Alle Wörter waren doof
             print "<p>Sorry, no search Strings remaining</p>"
@@ -87,12 +89,12 @@ class search:
 
         if result_count == 0:
             print "<p>Sorry, nothing found. Try again:</p>"
-            self.log(RAW_search_string, "search", "False")
+            self.log(search_string, "search", "False")
             # Such-Eingabemaske wieder anzeigen
-            self.lucidTag()
+            self.lucidTag(search_string)
             return
 
-        self.log("[%s] Count: %s" % (RAW_search_string,result_count), "search", "OK")
+        self.log("[%s] Count: %s" % (search_string,result_count), "search", "OK")
 
         print "<h3>%s results for '%s' (%0.2fsec.):</h3>" % (
             result_count, cgi.escape(" ".join(search_words)), time.time() - start_time

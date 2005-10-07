@@ -5,9 +5,13 @@
 Abwicklung von Login/Logout
 """
 
-__version__ = "v0.1.2"
+__version__ = "v0.2"
 
 __history__ = """
+v0.2
+    - Security-Fix: Die Zufallszahl zur MD5 Bildung, wird nun in den Sessiondaten in der Datenbank
+        zwischengespeichert und nicht mehr aus den zurück geschickten Formulardaten genommen. Somit
+        wird abgesichert, das die Login-Anfrage von einem gleichen Client kommt.
 v0.1.2
     - Verbesserungen:
         - Für Rückmeldungen wird nun page_msg benutzt
@@ -49,7 +53,7 @@ Debug = False
 class auth:
 
     module_manager_data = {
-        "debug" : Debug,
+        "debug" : False,
 
         "login" : {
             "must_login"    : False,
@@ -88,10 +92,9 @@ class auth:
         Holt das LogIn-Formular aus der DB und stellt es zusammen
         """
         import random
+        rnd_login = random.randint(10000,99999)
 
-        login_form = self.db.get_internal_page( "login_form" )["content"]
-
-        url = "%s?page_id=%s&command=auth&action=check_login" % (
+        url = "%s?page_id=%s&amp;command=auth&amp;action=check_login" % (
             self.config.system.real_self_url, self.CGIdata["page_id"]
         )
 
@@ -101,16 +104,21 @@ class auth:
         except KeyError:
             username = ""
 
-        try:
-            return login_form % {
-                    "user"          : username,
-                    "md5"           : self.config.system.md5javascript,
-                    "md5manager"    : self.config.system.md5manager,
-                    "rnd"           : random.randint(10000,99999),
-                    "url"           : url
-                }
-        except Exception, e:
-            return "Error in login_form! Please check DB. (%s)" % e
+        self.session.makeSession() # Eine Session eröffnen
+        # Zufallszahl "merken"
+        self.session["rnd_login"] = rnd_login
+
+        if Debug == True:
+            self.session.debug()
+
+        return self.db.get_internal_page(
+            internal_page_name = "login_form",
+            page_dict = {
+                "user"          : username,
+                "rnd"           : rnd_login,
+                "url"           : url
+            }
+        )
 
     def check_login( self ):
         """
@@ -120,25 +128,22 @@ class auth:
             username    = self.CGIdata["user"]
             form_pass1  = self.CGIdata["md5pass1"]
             form_pass2  = self.CGIdata["md5pass2"]
-            rnd         = self.CGIdata["rnd"]
-            md5login    = self.CGIdata["use_md5login"]
         except KeyError, e:
-            # Formulardaten nicht vollst�ndig
-            msg  = "<h1>Internal Error:</h1>"
+            # Formulardaten nicht vollständig
+            msg  = "<h1>Login Error:</h1>"
             msg += "<h3>Form data not complete: '%s'</h3>" %e
-            msg += "Did you run 'install_PyLucid.py'? Check login form in SQL table 'pages_internal'.<br/>"
+            msg += "<p>Have you enabled JavaScript?</p>"
+            msg += "<p>Did you run 'install_PyLucid.py'? Check login form in SQL table 'pages_internal'.</p>"
             if Debug: msg += "CGI-Keys: " + str(self.CGIdata.keys())
             return msg
 
-        if md5login != 1:
-            return "Klartext passwort Übermittlung noch nicht fertig!"
-
-        return self.check_md5_login( username, form_pass1, form_pass2, rnd )
+        return self.check_md5_login( username, form_pass1, form_pass2 )
 
     def _error( self, log_msg, public_msg ):
         """Fehler werden abhängig vom Debug-Status angezeigt/gespeichert"""
         self.log( log_msg )
-        time.sleep(3)
+        self.session.delete_session()
+        #~ time.sleep(3)
         self.page_msg( public_msg )
         if Debug:
             # Debug Modus: Es wird mehr Informationen an den Client geschickt
@@ -146,15 +151,24 @@ class auth:
         # Login-Form wieder anzeigen
         return self.login()
 
-    def check_md5_login( self, username, form_pass1, form_pass2, rnd ):
+    def check_md5_login( self, username, form_pass1, form_pass2 ):
         """
         Überprüft die md5-JavaScript-Logindaten
         """
+        try:
+            # Die Zufallszahl beim login, wird aus der Datenbank geholt, nicht aus
+            # den zurück geschickten Formular-Daten
+            rnd_login = self.session["rnd_login"]
+        except KeyError:
+            return self._error(
+                "Error-0: Can't get rnd_login number from session",
+                "LogIn Error! (error:0)"
+            )
 
         if (len( form_pass1 ) != 32) or (len( form_pass2 ) != 32):
             return self._error(
-                "Error-0: len( form_pass ) != 32",
-                "LogIn Error! (error:0)"
+                "Error-1: len( form_pass ) != 32",
+                "LogIn Error! (error:1)"
             )
 
         try:
@@ -170,8 +184,8 @@ class auth:
         # Ersten MD5 Summen vergleichen
         if form_pass1 != db_userdata["pass1"]:
             return self._error(
-                'Error-1: form_pass1 != db_userdata["pass1"]',
-                "LogIn Error: Wrong Password! (error:1)"
+                'Error-2: form_pass1 != db_userdata["pass1"]',
+                "LogIn Error: Wrong Password! (error:2)"
             )
 
         try:
@@ -180,27 +194,26 @@ class auth:
             db_pass2 = crypt.decrypt( db_userdata["pass2"], form_pass1 )
         except Exception, e:
             return self._error(
-                "Error-2: decrypt db_pass2 failt: %s" % e ,
-                "LogIn Error: Wrong Password! (error:2)"
+                "Error-3: decrypt db_pass2 failt: %s" % e ,
+                "LogIn Error: Wrong Password! (error:3)"
             )
 
         # An den entschlüßelten, zweiten Teil des Passwortes, die Zufallszahl dranhängen...
-        db_pass2 += str( rnd )
+        db_pass2 += str( rnd_login )
         # ...daraus die zweite MD5 Summe bilden
         db_pass2md5 = md5.new( db_pass2 ).hexdigest()
 
         # Vergleichen der zweiten MD5 Summen
         if db_pass2md5 != form_pass2:
             return self._error(
-                'Error-3: db_pass2md5 != form_pass2 |%s|' % db_pass2 ,
-                "LogIn Error: Wrong Password! (error:3)"
+                'Error-4: db_pass2md5 != form_pass2 |%s|' % db_pass2 ,
+                "LogIn Error: Wrong Password! (error:4)"
             )
 
         # Alles in Ordnung, User wird nun eingeloggt:
 
-        self.session.makeSession() # Eine Session er�ffnen
-
         # Sessiondaten festhalten
+        del self.session["rnd_login"] # Brauchen wir nicht mehr
         self.session["user_id"]     = db_userdata["id"]
         self.session["user"]        = username
         #~ sefl.session["user_group"]

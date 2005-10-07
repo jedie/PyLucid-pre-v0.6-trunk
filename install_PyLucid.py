@@ -1,15 +1,20 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
 
-"""PyLucid "installer"
-
-Evtl. muß der Pfad in dem sich PyLucid's "config.py" sich befindet
-per Hand angepasst werden!
+"""
+PyLucid "installer"
 """
 
-__version__ = "v0.2"
+__version__ = "v0.3.1"
 
 __history__ = """
+v0.3.1
+    - Packports Pfad hinzugefügt
+v0.3
+    - Es kann nur einmal ein Admin angelegt werden
+    - Benutzt nun einige PyLucid-Objekte (erforderlich für neues userhandling)
+    - Möglichkeit dir Markup-String zu IDs zu konvertieren (Änderung in PyLucid v0.5)
+    - CSS Spielereien 2
 v0.2
     - Anpassung an neue install-Daten-Struktur.
     - "add Admin"-Formular wird mit JavaScript überprüft.
@@ -87,16 +92,23 @@ Sicherheitslücke: Es sollte nur ein Admin angelegt werden können, wenn noch ke
 #~ sys.exit()
 
 
-
+print "Content-type: text/html\n"
 
 
 import cgitb;cgitb.enable()
 import os, sys, cgi, re, zipfile
 
 
+if not sys.version.startswith("2.4"):
+    # Damit werden erst die "backports" gefunden, wenn Python älter als v2.4 ist
+    sys.path.insert( 0, "PyLucid_python_backports" )
+
 
 import config # PyLucid's "config.py"
-from PyLucid_system import SQL, sessiondata, userhandling
+from PyLucid_system import SQL
+from PyLucid_system import sessiondata
+from PyLucid_system import tools
+from PyLucid_modules import userhandling
 
 #__________________________________________________________________________
 
@@ -135,7 +147,7 @@ db_updates = [
 #__________________________________________________________________________
 
 
-HTML_head = """<?xml version="1.0" encoding="UTF-8"?>
+print """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
@@ -146,7 +158,7 @@ HTML_head = """<?xml version="1.0" encoding="UTF-8"?>
 <body>
 <style type="text/css">
 html, body {
-    padding: 3em;
+    padding: 30px;
     background-color: #FFFFEE;
 }
 body {
@@ -154,7 +166,7 @@ body {
     color: #000000;
     font-size: 0.9em;
     background-color: #FFFFDB;
-    margin: 3em;
+    margin: 30px;
     border: 3px solid #C9C573;
 }
 form * {
@@ -167,6 +179,18 @@ input {
 pre {
     background-color: #FFFFFF;
     padding: 1em;
+}
+#menu li, #menu li a {
+    list-style-type: square;
+    padding: 0.3em;
+}
+a {
+    color:#00BBEE;
+    padding: 0.1em;
+}
+a:hover {
+    color:#000000;
+    background-color: #F4F4D2;
 }
 </style>
 <h2>PyLucid Setup %s</h2>""" % __version__
@@ -212,17 +236,24 @@ class SQL_dump:
             print "re-initialisation DB table '%s':" % current_table
             command = self.get_table_data(current_table)
 
-            print " - Drop table"
-            status = self.execute(
-                "DROP TABLE `%s%s`;" % (config.dbconf["dbTablePrefix"],current_table)
-            )
+            print " - Drop table...",
+            try:
+                status = self.execute(
+                    "DROP TABLE `%s%s`;" % (config.dbconf["dbTablePrefix"],current_table)
+                )
+            except Exception, e:
+                print "Error:", e
+            else:
+                print "OK"
 
-            print " - recreate Table and insert values"
+            print " - recreate Table and insert values...",
             try:
                 counter = self.execute_many(command)
             except Exception,e:
                 print "ERROR:", e
                 sys.exit()
+            else:
+                print "OK"
 
             reinit_tables.remove(current_table)
             print
@@ -302,25 +333,48 @@ class SQL_dump:
 
 
 
+
+
+
+
+
+
 ##__________________________________________________________________________________________
+
+
+
+
+
+
 
 
 
 
 class PyLucid_setup:
     def __init__( self ):
-        print HTML_head
+        self.PyLucid = {}
+
+        self.path_setup()
+
+        # Speichert Nachrichten die in der Seite angezeigt werden sollen
+        self.page_msg       = sessiondata.page_msg()
+        self.PyLucid["page_msg"] = self.page_msg
+
+        self.CGIdata = sessiondata.CGIdata( self.PyLucid )
+        self.CGIdata["install_PyLucid"] = True
+        self.PyLucid["CGIdata"] = self.CGIdata
+
         try:
-            self.db = SQL.db()
-        except:
+            self.db = SQL.db( self.PyLucid )
+        except Exception, e:
+            print "Error:", e
             print "check config in 'config.py' first!"
             sys.exit()
+        self.PyLucid["db"] = self.db
 
-        self.page_msg = sessiondata.page_msg()
-        PyLucid = {"page_msg": self.page_msg}
-
-        self.CGIdata = sessiondata.CGIdata( PyLucid )
-        #~ print "<p>CGI-data debug: '%s'</p>" % self.CGIdata
+        tools.PyLucid           = self.PyLucid
+        self.tools = tools
+        self.PyLucid["tools"]   = self.tools
 
         if self.CGIdata.has_key( "action" ):
             action = self.CGIdata["action"]
@@ -336,6 +390,7 @@ class PyLucid_setup:
                 (self.install_PyLucid,  "install",              "Install PyLucid from scratch"),
                 (self.add_admin,        "add_admin",            "add a admin user"),
                 (self.re_init,          "re_init",              "partially re-initialisation DB tables"),
+                (self.convert_markups,  "convert_markups",      "Convert Markup Names to IDs (PyLucid v0.x -&gt; 0.5)"),
                 #~ (self.convert_db,       "convert_db",           "convert DB data from PHP-LucidCMS to PyLucid Format"),
                 #~ (self.convert_locals,   "locals",               "convert locals (ony preview!)"),
             ]
@@ -344,54 +399,45 @@ class PyLucid_setup:
             if self.CGIdata.has_key( action[1] ):
                 # Ruft die Methode auf, die in self.actions definiert wurde
                 action[0]()
-                print self.page_msg.data
-                sys.exit()
+                self.end()
 
         self.print_actionmenu()
         print "<hr>"
-        self.check_system()
         self.print_info()
+        self.end()
 
+    def path_setup(self):
+        from index import path
+        # setzt die Pfade mit der selben Klasse aus der index.py
+        path(config).setup()
+
+    def end(self):
+        """
+        Sollte immer zum Schluß aufgerufen werden!
+        """
         self.db.close()
+        if self.page_msg.data != "":
+            print "<pre>%s</pre>" % self.page_msg.data
+        self.print_saftey_info()
         print HTML_bottom
+        sys.exit()
 
     def print_info( self ):
+        print "<h4>Path in config.py:</h4>"
+        print "<pre>"
+        print "script_filename:", config.system.script_filename
+        print "document_root:", config.system.document_root
+        print "</pre>"
+        print 'Check this link to your PyLucid CMS: <a href="%(url)s">%(url)s</a>' % {"url": config.system.poormans_url}
+        print '(If this link is wrong, you <strong>must</strong> change the Path in config.py!!!)'
         print "<hr>"
         print '<p><a href="http://www.pylucid.org">www.pylucid.org</a> |'
         print '<a href="http://www.pylucid.org/index.py?p=/Download/install+PyLucid">install instructions</a> |'
         print '<a href="http://www.pylucid.org/index.py?p=/Download/update+instructions">update instructions</a></p>'
 
-    def check_system( self ):
-        def check_file_exists( filepath, txt ):
-            filepath = os.path.normpath( os.environ["DOCUMENT_ROOT"] + "/" + filepath )
-            if not os.path.isfile( filepath ):
-                print "Error:"
-                print txt
-                print "Please check settings in 'PyLucid/system/config.py' !!!"
-            else:
-                print txt,"file found - OK"
-
-        print "<h4>System check:</h4>"
-        print "<pre>"
-        check_file_exists( config.system.md5javascript, "Ralf Mieke's 'md5.js'-File" )
-        check_file_exists( config.system.md5manager, "PyLucid's 'md5manager.js'-File" )
-        print "</pre>"
-
-        self.check_path()
-
-    def check_path( self ):
-        print "<h4>Path Check:</h4>"
-        print "<pre>"
-        script_filename = config.system.script_filename
-        document_root   = config.system.document_root
-
-        print "script_filename:", script_filename
-        print "document_root:", document_root
-        print "</pre>"
-
     def print_actionmenu( self ):
         print "Please select:"
-        print "<ul>"
+        print '<ul id="menu">'
         for i in self.actions :
             print '<li><a href="?%s">%s</a></li>' % (i[1], i[2])
 
@@ -447,6 +493,57 @@ class PyLucid_setup:
 
     #__________________________________________________________________________________________
 
+    def convert_markups(self):
+        print "<h3>Convert Markup Names to Markup IDs in DB</h3>"
+        self.print_backlink()
+
+        try:
+            self.db.select(
+                select_items    = ["name"],
+                from_table      = "markups",
+            )
+        except Exception,e:
+            print "Error:", e
+            print "<p><strong>NOTE:</strong> You must first re-init 'markups' table!</p>"
+            return
+
+        print "<h4>Convert to numbers:</h4>"
+        print "<pre>"
+
+        page_data = self.db.select(
+            select_items    = ["id","name","markup"],
+            from_table      = "pages",
+        )
+        for page in page_data:
+            markup = self.db.get_markup_id(page["markup"])
+            print "%-30s\t%8s -&gt; %s" % (
+                cgi.escape(page["name"]),page["markup"], markup
+            )
+            self.db.update(
+                table   = "pages",
+                data    = {"markup":markup},
+                where   = ("id",page["id"]),
+                limit   = 1
+            )
+        print "</pre>"
+        print "<h4>Convert table field</h4>"
+        SQLcommand = "ALTER TABLE `$tableprefix$pages` CHANGE `markup` `markup` SMALLINT(1) NULL DEFAULT '1';"
+        print "<pre>"
+        print SQLcommand
+        try:
+            status = self.db.get( SQLcommand )
+        except Exception, e:
+            print "Error: %s" % e
+        else:
+            if status == ():
+                print "OK"
+            else:
+                print "Error:", status
+        print "</pre>"
+        self.print_backlink()
+
+    #__________________________________________________________________________________________
+
     def setup_db( self ):
         print "<pre>"
         for SQLcommand in SQL_table_data.split("----"):
@@ -492,52 +589,35 @@ class PyLucid_setup:
     #__________________________________________________________________________________________
 
     def add_admin( self ):
-        #~ self.CGIdata.debug()
+        """ Einen neuen Admin anlegen """
+        print "<h3>Add Admin:</h3>"
+        self.print_backlink()
+
+        if self.db.exists_admin() == True:
+            print "<h3>Sorry, an admin already exists.</h3>"
+            print "<p>For safety reasons: Only one User can create here.<br />"
+            print "Log in and create new Users!</p>"
+            self.end()
+
         if not self._has_all_keys( self.CGIdata, ["username","email","pass1"] ):
-            print '<form name="data" method="post" action="?add_admin" onSubmit="return check()">'
-            print '<p>'
-            print 'Username: <input name="username" type="text" value=""><br />'
-            print 'email: <input name="email" type="text" value=""><br />'
-            print 'Realname: <input name="realname" type="text" value=""><br />'
-            print 'Password 1: <input name="pass1" type="password" value="">(len min.8!)<br />'
-            print 'Password 2: <input name="pass2" type="password" value="">(verification)<br />'
-            print '<strong>(Note: all fields required!)</strong><br />'
-            print '<button type="submit" name="Submit">add admin</button>'
-            print '</p></form>'
-            print '<script type="text/javascript">'
-            print 'function check() {'
-            print '  if (document.data.pass1.value != document.data.pass2.value) {'
-            print '    alert("Passwort verfication fail! password 1 != password 2");'
-            print '    return false;'
-            print '  }'
-            print '  if (document.data.pass1.value.length <= 7) {'
-            print '    alert("For security, min. password length is 8 chars!");'
-            print '    return false;'
-            print '  }'
-            print '  if (document.data.email.value.indexOf("@") == -1) {'
-            print '    alert("Need a valid eMail adress (for password recovery.)");'
-            print '    return false;'
-            print '  }'
-            print '  return true;'
-            print '}'
-            print '</script>'
+            self.db.print_internal_page("add_user_form", {"url":"?add_admin"})
+            print "<strong>Note:</strong> Is admin checkbox ignored. Always create a admin account!"
             return
 
-        print "<h3>Add Admin:</h3>"
-        self.print_backlink( "add_admin" )
-        print "<pre>"
         if not self.CGIdata.has_key("realname"):
             self.CGIdata["realname"] = None
-        #~ print self.CGIdata["username"]
-        #~ print self.CGIdata["pass"]
 
-        usermanager = userhandling.usermanager( self.db )
-        usermanager.add_user( self.CGIdata["username"], self.CGIdata["email"], self.CGIdata["pass1"], self.CGIdata["realname"], admin=1 )
+        usermanager = userhandling.userhandling( self.PyLucid )
+        try:
+            usermanager.add_user(
+                username    = self.CGIdata["username"],
+                email       = self.CGIdata["email"],
+                realname    = self.CGIdata["realname"],
+                admin       = 1
+            )
+        except KeyError, e:
+            print "CGIdata KeyError: '%s' not found! No user is added!" % e
 
-        print "User '%s' add." % self.CGIdata["username"]
-        print "</pre>"
-        self.print_saftey_info()
-        print '<a href="?">back</a>'
 
     ###########################################################################################
 
@@ -674,7 +754,6 @@ class PyLucid_setup:
 
 
 if __name__ == "__main__":
-    print "Content-type: text/html\n"
     #~ print "<pre>"
     PyLucid_setup()
 

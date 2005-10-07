@@ -2,7 +2,7 @@
 # -*- coding: UTF-8 -*-
 
 """
-Verschiedene Tools für den Umgang mit lucid
+Verschiedene Tools fÃ¼r den Umgang mit PyLucid
 """
 
 __version__="0.0.6"
@@ -299,6 +299,26 @@ class redirector:
         sys.stderr = self.olderr
         return self.out_buffer.get()
 
+class stdout_marker:
+    """
+    Debug Anzeige, woher print-Ausgaben kommen
+    """
+    def __init__(self):
+        self.org_stdout = sys.stdout
+        sys.stdout = self
+
+    def write( self, *txt ):
+        import inspect
+        for stack in inspect.stack():
+            filename = stack[1].replace("\\","/").split("/")[-1]
+            if filename=="tools.py": continue
+            self.org_stdout.write( "%-20s line %3s %s\n" % (
+                    filename, stack[2], stack[3]
+                )
+            )
+            #~ self.org_stdout.write( str(stack) )
+        self.org_stdout.write( " ".join([str(i) for i in txt]) + "\n" )
+
 #~ print "redirector test:"
 #~ r = redirector()
 #~ print "1"
@@ -397,6 +417,31 @@ class subprocess2(threading.Thread):
 #________________________________________________________________________________________________
 
 
+class email:
+    def send(self, to, subject, text):
+        import time, smtplib
+        from email.MIMEText import MIMEText
+
+        msg = MIMEText(
+            _text = text,
+            _subtype = "plain",
+            _charset = "UTF-8"
+        )
+        msg['From'] = "auto_mailer@jensdiemer.de"
+        msg['To'] = to
+        msg['Subject'] = subject
+        # Datum nach RFC 2822 Internet email standard.
+        msg['Date'] = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
+        msg['User-Agent'] = "PyLucid (Python v%s)" % sys.version
+
+        s = smtplib.SMTP()
+        s.connect()
+        s.sendmail(msg['From'], [msg['To']], msg.as_string())
+        s.close()
+
+
+#________________________________________________________________________________________________
+
 
 class convertdateformat:
     """
@@ -474,6 +519,8 @@ class convertdateformat:
 #~ formatDateTime = convertdateformat().convert( formatDateTime )
 #~ print formatDateTime
 #~ sys.exit()
+
+
 
 
 

@@ -12,9 +12,15 @@ Editor für alles was mit aussehen zu tun hat:
 
 __author__ = "Jens Diemer (www.jensdiemer.de)"
 
-__version__="0.1.0"
+__version__="0.2"
 
 __history__="""
+v0.2
+    - Bug 1308063: Umstellung von <button> auf <input>, weil's der IE nicht kann
+        s. http://www.python-forum.de/viewtopic.php?t=4180
+    - NEU: Styles und Template könnne nur dann gelöscht werden, wenn keine Seite diese noch benutzten
+v0.1.1
+    - edit_internal_page_form: markups sind nun IDs aus der Tabelle markups
 v0.1.0
     - Komplettumbau für neuen Module-Manager
 v0.0.4
@@ -42,69 +48,76 @@ import sys, cgi
 
 class edit_look:
 
-    global_rights = {
-            "must_login"    : True,
-            "must_admin"    : True,
-    }
+    #_______________________________________________________________________
+    # Module-Manager Daten
 
     module_manager_data = {
         #~ "debug" : True,
         "debug" : False,
 
-        "edit_style" : {
+        "stylesheet" : {
             "must_login"    : True,
             "must_admin"    : True,
-            "CGI_dependent_actions" : {
-                "edit_style_form"   : {
-                    "CGI_laws"      : { "edit" : int }
+            "CGI_dependent_actions": {
+                "edit_style": {
+                    "CGI_laws"      : {"edit": "edit"}, # Wert vom angeklicken Button
+                    "get_CGI_data"  : {"id": int}
                 },
-                "del_style"         : {
-                    "CGI_laws"      : { "del" : int }
+                "del_style": {
+                    "CGI_laws"      : {"del": "del"}, # Wert vom angeklicken Button
+                    "get_CGI_data"  : {"id": int}
                 },
-                "copy_style"        : {
-                    "CGI_laws"      : { "duplicate" : "True" },
-                    "CGI_must_have" : ("clone_name","new_name"),
+                "clone_style": {
+                    "CGI_laws"      : {"clone": "clone"}, # Wert vom angeklicken Button
+                    "get_CGI_data"  : {"clone_name": str, "new_name": str},
                 },
-                "save_style"        : {
-                    "CGI_laws"      : { "Submit":"save", "save" : int },
-                    "CGI_must_have" : ("description","content"),
+                "save_style": {
+                    "CGI_laws"      : {"save": "save"},
+                    "get_CGI_data"  : {"id": int, "name": str, "description": str, "content": str},
                 },
             }
         },
 
-        "edit_template": {
+        "template": {
             "must_login"    : True,
             "must_admin"    : True,
             "CGI_dependent_actions" : {
-                "edit_template_form"    : {
-                    "CGI_laws"          : { "edit" : int }
+                "edit_template": {
+                    "CGI_laws"      : {"edit": "edit"}, # Wert vom angeklicken Button
+                    "get_CGI_data"  : {"id": int}
                 },
-                "del_template"          : {
-                    "CGI_laws"          : { "del" : int }
+                "del_template": {
+                    "CGI_laws"      : {"del": "del"}, # Wert vom angeklicken Button
+                    "get_CGI_data"  : {"id": int}
                 },
-                "copy_template"         : {
-                    "CGI_laws"          : { "duplicate" : "True" },
-                    "CGI_must_have"     : ("clone_name","new_name"),
+                "clone_template": {
+                    "CGI_laws"      : {"clone": "clone"}, # Wert vom angeklicken Button
+                    "get_CGI_data"  : {"clone_name": str, "new_name": str},
                 },
-                "save_template"         : {
-                    "CGI_laws"          : { "Submit":"save", "save" : int },
-                    "CGI_must_have"     : ("description","content"),
+                "save_template": {
+                    "CGI_laws"      : {"save": "save"},
+                    "get_CGI_data"  : {"id": int, "name": str, "description": str, "content": str},
                 },
             }
         },
 
-        "edit_internal_page" : {
+        "internal_page" : {
             "must_login"    : True,
             "must_admin"    : True,
             "CGI_dependent_actions" : {
-                "edit_internal_page_form"   : { "CGI_must_have": ("edit",) },
+                "edit_internal_page_form": {
+                    "CGI_laws"      : {"edit": "edit"}, # Wert vom angeklicken Button
+                    "get_CGI_data"  : {"internal_page_name": str},
+                },
                 "save_internal_page"        : {
-                    "CGI_laws"      : { "Submit":"save" },
-                    "CGI_must_have" : ("name","markup","content","description")
+                    "CGI_laws"      : {"save": "save"}, # Wert vom angeklicken Button
+                    "get_CGI_data"  : {"internal_page_name": str, "content": str, "description": str, "markup": int},
                 },
             }
         },
     }
+
+    #_______________________________________________________________________
 
     def __init__( self, PyLucid ):
         self.config     = PyLucid["config"]
@@ -118,36 +131,30 @@ class edit_look:
     #_______________________________________________________________________
     ## Stylesheet
 
-    def edit_style( self ):
-        self.edit_style_select_page()
-
-    def edit_style_select_page( self ):
-        print "<h2>Edit styles v%s</h2>" % __version__
+    def stylesheet( self ):
+        """ Es wird die internal_page 'select_style' zusammen gebaut """
         self.select_table(
-            form_link   = "edit_style",
+            type        = "style",
             table_data  = self.db.get_style_list()
         )
 
-    def edit_style_form( self ):
+    def edit_style( self, id ):
         """ Seite zum editieren eines Stylesheet """
-        style_id = self.CGIdata["edit"]
         try:
-            edit_data = self.db.get_style_data( style_id )
+            edit_data = self.db.get_style_data( id )
         except IndexError:
             print "bad style id!"
             return
 
         self.make_edit_page(
-            edit_data           = edit_data,
-            internal_page_name  = "edit_style",
-            order               = "edit_style",
-            id                  = style_id,
+            edit_data   = edit_data,
+            name        = "edit_style",
+            order       = "select_style",
+            id          = id,
         )
 
-    def copy_style( self ):
+    def clone_style( self, clone_name, new_name="NoName" ):
         """ Ein Stylesheet soll kopiert werden """
-        clone_name = self.CGIdata["clone_name"]
-        new_name = self.CGIdata["new_name"]
 
         style_content = self.db.get_style_data_by_name( clone_name )["content"]
 
@@ -156,65 +163,73 @@ class edit_look:
             "description"   : "clone of '%s'" % clone_name,
             "content"       : style_content,
         }
-        self.db.new_style( style_data )
+        try:
+            self.db.new_style( style_data )
+        except Exception, e:
+            self.page_msg("Error clone Style '%s' to '%s': %s" % (clone_name, new_name, e) )
+        else:
+            self.page_msg( "style '%s' duplicated to '%s'" % (clone_name, new_name) )
 
-        self.page_msg( "style '%s' duplicated to '%s'" % (clone_name, new_name) )
-        self.edit_style_select_page()
+        self.stylesheet() # Auswahlseite wieder anzeigen
 
-    def save_style( self ):
+    def save_style( self, id, name, description, content ):
         """ Speichert einen editierten Stylesheet """
-        style_id = self.CGIdata["save"]
+        try:
+            self.db.update_style( id, {"name": name, "content": content, "description": description} )
+        except Exception, e:
+            self.page_msg("Error saving style with id '%s' (use browser back button!): %s" % (id, e))
+        else:
+            self.page_msg( "Style saved!" )
 
-        style_data = {
-            "description"   : self.CGIdata["description"],
-            "content"       : self.CGIdata["content"]
-        }
-        self.db.update_style( style_id, style_data )
-        self.page_msg( "Style saved!" )
-        self.edit_style_select_page()
+        self.stylesheet() # Auswahlseite wieder anzeigen
 
-    def del_style( self ):
+    def del_style( self, id ):
         """ Lösche ein Stylesheet """
-        style_id = self.CGIdata["del"]
-        self.page_msg( "Delete Style (id:'%s')" % style_id )
-        self.db.delete_style( style_id )
-        self.edit_style_select_page()
+        page_names = self.db.select(
+            select_items    = ["name"],
+            from_table      = "pages",
+            where           = ("style", id)
+        )
+        if page_names != ():
+            names = [cgi.escape(i["name"]) for i in page_names]
+            self.page_msg("Can't delete stylesheet, the following pages used it: %s" % names)
+        else:
+            try:
+                self.db.delete_style( id )
+            except Exception, e:
+                self.page_msg("Error deleting style with id '%s': %s" % (id, e))
+            else:
+                self.page_msg( "Delete Style (id:'%s')" % id )
+
+        self.stylesheet() # Auswahlseite wieder anzeigen
 
     #_______________________________________________________________________
     ## Template
 
-    def edit_template( self ):
-        self.edit_template_select_page()
-
-    def edit_template_select_page( self ):
-        """ generiert eine Tabelle zur Template Auswahl """
-        print "<h2>Edit template v%s</h2>" % __version__
+    def template(self):
+        """ Es wird die internal_page 'select_template' zusammen gebaut """
         self.select_table(
-            form_link   = "edit_template",
+            type        = "template",
             table_data  = self.db.get_template_list()
         )
 
-    def edit_template_form( self ):
+    def edit_template(self, id):
         """ Seite zum editieren eines template """
-        template_id = self.CGIdata["edit"]
         try:
-            edit_data = self.db.get_template_data( template_id )
+            edit_data = self.db.get_template_data(id)
         except IndexError:
             print "bad template id!"
             return
 
         self.make_edit_page(
-            edit_data           = edit_data,
-            internal_page_name  = "edit_template",
-            order               = "edit_template",
-            id                  = template_id,
+            edit_data   = edit_data,
+            name        = "edit_template",
+            order       = "edit_template",
+            id          = id,
         )
 
-    def copy_template( self ):
+    def clone_template(self, clone_name, new_name="NoName"):
         """ Ein Template soll kopiert werden """
-        clone_name  = self.CGIdata["clone_name"]
-        new_name    = self.CGIdata["new_name"]
-
         template_content = self.db.get_template_data_by_name( clone_name )["content"]
 
         template_data = {
@@ -222,165 +237,167 @@ class edit_look:
             "description"   : "clone of '%s'" % clone_name,
             "content"       : template_content,
         }
-        self.db.new_template( template_data )
+        try:
+            self.db.new_template( template_data )
+        except Exception, e:
+            self.page_msg("Error cloning %s to %s: %s" % (clone_name, new_name, e))
+        else:
+            self.page_msg("template '%s' duplicated to '%s'" % (clone_name, new_name))
 
-        self.page_msg( "template '%s' duplicated to '%s'" % (clone_name, new_name) )
-        self.edit_template_select_page()
+        self.template() # Auswahlseite wieder anzeigen
 
-    def save_template( self ):
+    def save_template(self, id, name, description, content):
         """ Speichert einen editierten template """
-        template_id = self.CGIdata["save"]
-        template_data = {
-            "description"   : self.CGIdata["description"],
-            "content"       : self.CGIdata["content"]
-        }
-        self.db.update_template( template_id, template_data )
-        print "<h3>template saved!</h3>"
-        self.edit_template_select_page()
+        try:
+            self.db.update_template( id, {"name": name, "description": description, "content": content} )
+        except Exception, e:
+            self.page_msg("Can't update template: %s" % e)
+        else:
+            self.page_msg("template with ID %s saved!" % id)
 
-    def del_template( self ):
+        self.template() # Auswahlseite wieder anzeigen
+
+    def del_template(self, id):
         """ Lösche ein Template """
-        template_id = self.CGIdata["del"]
-        self.page_msg( "Delete Template (id:'%s')" % template_id )
-        self.db.delete_template( template_id )
-        self.edit_template_select_page()
+        page_names = self.db.select(
+            select_items    = ["name"],
+            from_table      = "pages",
+            where           = ("template", id)
+        )
+        if page_names != ():
+            names = [cgi.escape(i["name"]) for i in page_names]
+            self.page_msg("Can't delete template, the following pages used it: %s" % names)
+        else:
+            try:
+                self.db.delete_template(id)
+            except Exception, e:
+                self.page_msg("Error deleting template with id '%s': %s" % (id, e))
+            else:
+                self.page_msg("Delete Template (id:'%s')" % id)
+
+        self.template() # Auswahlseite wieder anzeigen
 
     #_______________________________________________________________________
     ## Methoden für Stylesheet- und Template-Editing
 
-    def make_edit_page( self, edit_data, internal_page_name, order, id ):
+    def make_edit_page( self, edit_data, name, order, id ):
         """ Erstellt die Seite zum Stylesheet/Template editieren """
-
-        internal_page   = self.db.get_internal_page(internal_page_name)["content"]
-
-        try:
-            print internal_page % {
+        self.db.print_internal_page(
+            internal_page_name  = name,
+            page_dict           = {
                 "name"          : edit_data["name"],
-                "url"           : "%s%s&save=%s" % (self.action_url, order, id),
+                "url"           : self.main_action_url,
                 "content"       : cgi.escape( edit_data["content"] ),
                 "description"   : cgi.escape( edit_data["description"] ),
                 "back"          : "%s%s" % (self.action_url, order),
+                "id"            : id,
             }
-        except KeyError, e:
-            print "<h1>generate internal Page fail:</h1><h4>KeyError:'%s'</h4>" % e
-            return
-
-    def select_table( self, form_link, table_data ):
-        """ Erstellt die Tabelle zum auswählen eines Style/Templates """
-
-        form_tag = '<form name="%s" method="post" action="%s%s">' % (
-            form_link, self.action_url, form_link
         )
 
-        print form_tag
-        print 'Duplicate <select name="clone_name">'
-        print self.tools.html_option_maker().build_from_list( [i["name"] for i in table_data] )
-        print '</select> to a new named: '
-        print '<input name="new_name" value="" size="20" maxlength="50" type="text">'
-        print '<button type="submit" name="duplicate" value="True">clone</button>'
-        print '</form>'
+    def select_table( self, type, table_data ):
+        """ Erstellt die Tabelle zum auswählen eines Style/Templates """
 
-        print form_tag
-        print '<table id="edit_%s_select" class="edit_table">' % type
+        clone_select = self.tools.html_option_maker().build_from_list( [i["name"] for i in table_data] )
 
+        table = '<table>\n'
         JS = '''onclick="return confirm('Are you sure to delete the item ?')"'''
-
         for item in table_data:
-            print "<tr>"
-            print '<td>'
-            print '<span class="name">%s</span><br/>' % item["name"]
-            print '<span class="description">%s</span>' % item["description"]
-            print "</td>"
+            table += "<tr>\n"
+            table += '  <form name="edit_%s" method="post" action="%s">\n' % (item["name"], self.main_action_url)
+            table += '  <input name="id" type="hidden" value="%s">' % item["id"]
+            table += '  <td class="name">%s</td>\n' % item["name"]
+            table += '  <td class="description">%s</td>\n' % item["description"]
+            table += '  <td><input type="submit" value="edit" name="edit" /></td>\n'
+            table += '  <td><input type="submit" value="del" name="del" /></td>\n'
+            table += "  </form>\n"
+            table += "</tr>\n"
+        table += '</table>\n'
 
-            print '<td><button type="submit" name="edit" value="%s">edit</button></td>' % item["id"]
-            print '<td><button type="submit" name="del" value="%s" %s>del</button></td>' % (
-                item["id"], JS
-            )
-
-            print "</tr>"
-        print '</table></form>'
+        # Seite anzeigen
+        self.db.print_internal_page(
+            internal_page_name  = "select_%s" % type,
+            page_dict           = {
+                "main_action_url"   : self.main_action_url,
+                "clone_select"      : clone_select,
+                "select_table"      : table,
+            }
+        )
 
     #_______________________________________________________________________
     ## Interne Seiten editieren
 
-    def edit_internal_page( self ):
+    def internal_page( self ):
         """ Tabelle zum auswählen einer Internen-Seite zum editieren """
-        print "<h2>Edit internal page v%s</h2>" % __version__
-        print '<table id="edit_internal_pages_select" class="edit_table">'
+        category_list   = self.db.get_internal_category()
+        page_list       = self.db.get_internal_page_list()
 
-        page_list = self.db.get_internal_page_list()
-        for item in page_list:
-            print "<tr>"
-            print "<td>%s</td>" % item["name"]
+        select_table = ""
+        for category in category_list:
+            category_id = category["id"]
+            select_table += "<h3>%s</h3>\n" % category["name"]
+            select_table += '<table id="edit_internal_pages_select">\n'
 
-            print '<td><a href="%sedit_internal_page&edit=%s">edit</a></td>' % (
-                self.action_url, item["name"]
-            )
-            print "<td>%s</td>" % item["description"]
-            print "</tr>"
-        print "</table>"
+            for page in page_list:
+                if page["category"] == category_id:
+                    select_table += "<tr>\n"
+                    select_table += '  <form name="internal_page" method="post" action="%s">\n' % self.main_action_url
+                    select_table += '  <input name="internal_page_name" type="hidden" value="%s" />\n' % page["name"]
+                    select_table += '  <td><input type="submit" value="edit" name="edit" /></td>\n'
+                    select_table += '  <td class="name">%s</td>\n' % page["name"]
+                    select_table += '  <td>%s</td>\n' % page["description"]
+                    select_table += '  </form>\n'
+                    select_table += "</tr>\n"
+            select_table += "</table>\n"
 
-    def edit_internal_page_form( self ):
+        self.db.print_internal_page(
+            internal_page_name = "select_internal_page",
+            page_dict = {
+                "select_table" : select_table,
+            }
+        )
+
+        print "<p><small>(edit_look v%s)</small></p>" % __version__
+
+    def edit_internal_page_form(self, internal_page_name):
         """ Formular zum editieren einer internen Seite """
-        internal_page_name = self.CGIdata["edit"]
-
         try:
             # Daten der internen Seite, die editiert werden soll
-            edit_data = self.db.get_internal_page_data( internal_page_name )
+            edit_data = self.db._get_internal_page_data( internal_page_name )
         except IndexError:
             self.page_msg( "bad internal-page name: '%s' !" % cgi.escape(internal_page_name) )
-            self.edit_internal_page_select()
+            self.internal_page() # Auswahl wieder anzeigen lassen
             return
 
-        # Daten der interne Seite zum editieren der internen Seiten holen ;)
-        edit_page   = self.db.get_internal_page("edit_internal_page")
-
         OptionMaker = self.tools.html_option_maker()
-        markup_option   = OptionMaker.build_from_list( self.config.available_markups, edit_data["markup"] )
+        markup_option   = OptionMaker.build_from_list(self.db.get_available_markups(), edit_data["markup"])
 
-        form_url = "%sedit_internal_page&name=%s" % ( self.action_url, internal_page_name )
-
-        try:
-            edit_page["content"] = edit_page["content"] % {
+        self.db.print_internal_page(
+            internal_page_name  = "edit_internal_page",
+            page_dict           = {
                 "name"          : internal_page_name,
-                "url"           : form_url,
+                "url"           : self.main_action_url,
                 "content"       : cgi.escape( edit_data["content"] ),
                 "description"   : cgi.escape( edit_data["description"] ),
                 "markup_option" : markup_option,
-                "back"          : form_url,
+                "back"          : "%sedit_internal_page" % self.action_url,
             }
-        except KeyError, e:
-            return "<h1>generate internal Page fail:</h1><h4>KeyError:'%s'</h4>" % e
+        )
 
-        print edit_page["content"]
-        #~ return edit_page["content"], edit_page["markup"]
-
-    def save_internal_page( self ):
+    def save_internal_page(self, internal_page_name, content, description, markup):
         """ Speichert einen editierte interne Seite """
+        page_data = {
+            "content"       : content,
+            "description"   : description,
+            "markup"        : markup,
+        }
         try:
-            internal_page_name = self.CGIdata["name"]
+            self.db.update_internal_page( internal_page_name, page_data )
         except Exception, e:
-            print "CGI-Error:", e
-            return
+            self.page_msg("Error saving internal page '%s': %s" % (cgi.escape(internal_page_name), e))
+        else:
+            self.page_msg("internal page '%s' saved!" % cgi.escape(internal_page_name))
 
-        try:
-            page_data = {
-                "content"       : self.CGIdata["content"],
-                "description"   : self.CGIdata["description"],
-                "markup"        : self.CGIdata["markup"],
-            }
-        except KeyError,e:
-            print "Formdata not complete.", e
-            print "set internal Pages to default with install_PyLucid.py"
-            print "(use back-Button!)"
-            return
-
-        self.db.update_internal_page( internal_page_name, page_data )
-
-        self.page_msg( "internal page '%s' saved!" % cgi.escape( internal_page_name ) )
-
-        # Auswahl wieder anzeigen lassen
-        self.edit_internal_page()
+        self.internal_page() # Auswahl wieder anzeigen lassen
 
     #_______________________________________________________________________
     ## Allgemeine Funktionen

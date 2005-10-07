@@ -67,10 +67,12 @@ class RSS:
         # Es werden keine PyLucid-Objekte benötigt...
         pass
 
-    def lucidFunction( self, url ):
+    def lucidFunction( self, function_info ):
         """
         Diese Funktion wird direkt vom Modul-Manager ausgeführt.
         """
+        url = function_info
+        sys.exit()
         try:
             import socket
             socket.setdefaulttimeout(5)

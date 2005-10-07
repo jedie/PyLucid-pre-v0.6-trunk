@@ -129,7 +129,7 @@ class mySQL:
     def __init__( self, *args, **kwargs ):
         self.tableprefix    = ""
 
-        # Bei debug=True werden die SQL-Befehle aufgegeben
+        # Bei debug=True werden die SQL-Befehle ausgegeben
         self.debug          = False
 
         try:
@@ -254,8 +254,16 @@ class mySQL:
 
             SQLcommand += where_string
 
-        if order != None:   SQLcommand += " ORDER BY %s %s" % order
-        if limit != None:   SQLcommand += " LIMIT %s,%s" % limit
+        if order != None:
+            try:
+                SQLcommand += " ORDER BY %s %s" % order
+            except TypeError,e:
+                raise TypeError("Error in db.select() ORDER statement (must be a tuple or List): %s" % e)
+        if limit != None:
+            try:
+                SQLcommand += " LIMIT %s,%s" % limit
+            except TypeError,e:
+                raise TypeError("Error in db.select() LIMIT statement (must be a tuple or List): %s" % e)
 
         if self.debug:
             print "-"*80

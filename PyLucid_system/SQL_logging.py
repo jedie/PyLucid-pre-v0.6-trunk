@@ -131,6 +131,13 @@ class log:
             limit           = (0,limit)
         )
 
+    def debug_last(self):
+        import inspect
+        self.page_msg(
+            "Log Debug (from '%s' line %s):" % (inspect.stack()[1][1][-20:], inspect.stack()[1][2])
+        )
+        for item in self.get_last_logs(limit=10):
+            self.page_msg(item["timestamp"], item["sid"], item["message"])
 
 
 

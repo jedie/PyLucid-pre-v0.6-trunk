@@ -6,9 +6,14 @@ Erzeugt einen Download des SQL Dumps
 http://dev.mysql.com/doc/mysql/de/mysqldump.html
 """
 
-__version__="0.2.0"
+__version__="0.2.2"
 
 __history__="""
+v0.2.2
+    - Nutzt die module_manager Einstelung "sys_exit", damit der Dumpdownload richtig beendet wird
+    - In additional_dump_info ist in sys.version ein \n Zeichen, welches nun rausfliegt.
+v0.2.1
+    - Anpassung an self.db.print_internal_page()
 v0.2.0
     - HTML-Ausgaben nun über interne Seite
 v0.1.2
@@ -29,6 +34,10 @@ v0.0.2
     - Großer Umbau: Anderes Menü, anderer Aufruf von mysqldump, Möglichkeiten Dump-Parameter anzugeben
 v0.0.1
     - Erste Version
+"""
+
+__todo__ = """
+verwendet noch Buttons!
 """
 
 import cgitb;cgitb.enable()
@@ -57,6 +66,7 @@ class MySQLdump:
             "must_login"    : True,
             "must_admin"    : True,
             "direct_out"    : True,
+            "sys_exit"      : True, # Damit ein sys.exit() auch wirklich fuktioniert
         }
     }
 
@@ -69,9 +79,6 @@ class MySQLdump:
 
     def menu( self ):
         """ Menü für Aktionen generieren """
-
-        internal_page = self.db.get_internal_page("MySQL_dump")
-
         default_no_data = ["log", "session_data"]
         default_no_data = [self.config.dbconf["dbTablePrefix"] + i for i in default_no_data]
 
@@ -86,11 +93,11 @@ class MySQLdump:
 
             table_data += '<tr>\n'
             table_data += '\t<td>%s</td>\n' % name
-            table_data += '\t<td><input type="radio" name="%s" value="ignore"></td>\n' % name
-            table_data += '\t<td><input type="radio" name="%s" value="structure"%s></td>\n' % (
+            table_data += '\t<td><input type="radio" name="%s" value="ignore" /></td>\n' % name
+            table_data += '\t<td><input type="radio" name="%s" value="structure"%s /></td>\n' % (
                 name, structure
             )
-            table_data += '\t<td><input type="radio" name="%s" value="complete"%s></td>\n' % (
+            table_data += '\t<td><input type="radio" name="%s" value="complete"%s /></td>\n' % (
                 name, complete
             )
             table_data += '</tr>\n'
@@ -107,12 +114,15 @@ class MySQLdump:
                     action[0], action[1]
                 )
 
-        print internal_page['content'] % {
-            "version"       : __version__,
-            "tables"        : table_data,
-            "url"           : self.command_url,
-            "buttons"       : buttons
-        }
+        self.db.print_internal_page(
+            internal_page_name  = "MySQL_dump",
+            page_dict           = {
+                "version"       : __version__,
+                "tables"        : table_data,
+                "url"           : self.command_url,
+                "buttons"       : buttons
+            }
+        )
 
     #_______________________________________________________________________
 
@@ -301,7 +311,7 @@ class MySQLdump:
         if hasattr(os,"uname"): # Nicht unter Windows verfügbar
             txt += "-- %s\n" % " - ".join( os.uname() )
 
-        txt += "-- Python v%s\n" % sys.version
+        txt += "-- Python v%s\n" % sys.version.replace("\n","")
 
         txt += "--\n"
 

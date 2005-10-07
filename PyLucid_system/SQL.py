@@ -7,9 +7,17 @@
 Anbindung an die SQL-Datenbank
 """
 
-__version__="0.0.7"
+__version__="0.0.8"
 
 __history__="""
+v0.0.9
+    - NEU: print_internal_page() Sollte ab jetzt immer direkt genutzt werden, wenn eine interne Seite
+        zum einsatzt kommt. Damit zentral String-Operating Fehler abgefangen werden.
+v0.0.8
+    - Nun können auch page_msg abgesetzt werden. Somit kann man hier mehr Inteligenz bei Fehlern einbauen
+    - Neue Fehlerausgabe bei get_internal_page() besser im zusammenhang mit dem Modul-Manager
+    - Neu: userdata()
+    - Neu: get_available_markups()
 v0.0.7
     - order=("name","ASC") bei internal_page-, style- und template-Liste eingefügt
     - get_page_link_by_id() funktioniert auch mit Sonderzeichen im Link
@@ -44,7 +52,7 @@ class db( mySQL ):
     Erweitert den allgemeinen SQL-Wrapper (mySQL.py) um
     spezielle PyLucid-Funktionen.
     """
-    def __init__( self ):
+    def __init__( self, PyLucid ):
         #~ print "Content-type: text/html\n"
         #~ print "<h2>Connecte zur DB!</h2>"
         #~ import inspect
@@ -66,6 +74,9 @@ class db( mySQL ):
             #~ print "<h2>Can't connect to SQL-DB: '%s'</h2>" % e
             #~ import sys
             #~ sys.exit()
+
+        self.page_msg   = PyLucid["page_msg"]
+        self.CGIdata    = PyLucid["CGIdata"]
 
         # Table-Prefix for all SQL-commands:
         self.tableprefix = dbconf["dbTablePrefix"]
@@ -264,18 +275,19 @@ class db( mySQL ):
     def get_sitemap_data( self ):
         """ Alle Daten die für`s Sitemap benötigt werden """
         return self.select(
-                select_items    = [ "id","name","title","parent"],
+                select_items    = ["id","name","title","parent"],
                 from_table      = "pages",
-                where           = [ ("showlinks",1), ("permitViewPublic",1) ],
+                where           = [("showlinks",1), ("permitViewPublic",1)],
                 order           = ("position","ASC"),
             )
 
-    def make_order_data( self ):
-        """ Alle Daten die für`s Sitemap benötigt werden """
+    def get_sequencing_data(self):
+        """ Alle Daten die für pageadmin.sequencing() benötigt werden """
+        parend_id = self.parentID_by_id(self.CGIdata["page_id"])
         return self.select(
-                select_items    = [ "id","name","title","parent","position"],
+                select_items    = ["id","name","title","parent","position"],
                 from_table      = "pages",
-                #~ where           = [ ("showlinks",1), ("permitViewPublic",1) ],
+                where           = ("parent", parend_id),
                 order           = ("position","ASC"),
             )
 
@@ -379,22 +391,65 @@ class db( mySQL ):
 
     def get_internal_page_list( self ):
         return self.select(
-                select_items    = ["name","description","markup"],
+                select_items    = ["name","category","description","markup"],
                 from_table      = "pages_internal",
-                order           = ("name","ASC"),
             )
 
-    def get_internal_page_data( self, internal_page_name ):
+    def get_internal_category( self ):
+        return self.select(
+                select_items    = ["id","name"],
+                from_table      = "pages_internal_category",
+                order           = ("position","ASC"),
+            )
+
+    def _get_internal_page_data(self, internal_page_name):
         try:
             return self.select(
-                    select_items    = ["markup","content","description"],
-                    from_table      = "pages_internal",
-                    where           = ("name", internal_page_name)
-                )[0]
-        except Exception, e:
-            self.page_msg(
-                "Error get internal page '%s': %s" % (internal_page_name, e)
+                select_items    = ["markup","content","description"],
+                from_table      = "pages_internal",
+                where           = ("name", internal_page_name)
+            )[0]
+        except KeyError:
+            raise KeyError("Can't get internal page '%s'" % internal_page_name )
+
+    def print_internal_page(self, internal_page_name, page_dict={}):
+        """
+        Interne Seite aufgeüllt mit Daten ausgeben. Diese Methode sollte immer
+        verwendet werden, weil sie eine gescheite Fehlermeldung anzeigt.
+        """
+        content = self._get_internal_page_data(internal_page_name)["content"]
+
+        try:
+            print content % page_dict
+        except KeyError, e:
+            import re
+            placeholder = re.findall(r"%\((.*?)\)s", content)
+            raise KeyError(
+                "KeyError '%s': Can't fill internal page '%s'. \
+                placeholder in internal page: %s given placeholder for that page: %s" % (
+                    e, internal_page_name, placeholder, page_dict.keys()
+                )
             )
+
+    def get_internal_page(self, internal_page_name, page_dict={}):
+        """
+        Interne Seite aufgeüllt mit Daten ausgeben. Diese Methode sollte immer
+        verwendet werden, weil sie eine gescheite Fehlermeldung anzeigt.
+        """
+        internal_page = self._get_internal_page_data(internal_page_name)
+
+        try:
+            internal_page["content"] = internal_page["content"] % page_dict
+        except KeyError, e:
+            import re
+            placeholder = re.findall(r"%\((.*?)\)s", content)
+            raise KeyError(
+                "KeyError '%s': Can't fill internal page '%s'. \
+                placeholder in internal page: %s given placeholder for that page: %s" % (
+                    e, internal_page_name, placeholder, page_dict.keys()
+                )
+            )
+        return internal_page
 
     def update_internal_page( self, internal_page_name, page_data ):
         self.update(
@@ -403,22 +458,6 @@ class db( mySQL ):
             where   = ("name",internal_page_name),
             limit   = 1
         )
-
-    def get_internal_page( self, pagename ):
-        #~ pagename = "__%s__" % pagename
-        try:
-            return self.select(
-                    select_items    = ["content", "markup"],
-                    from_table      = "pages_internal",
-                    where           = ("name", pagename)
-                )[0]
-        except:
-            print "Content-type: text/html\n"
-            print "<h1>Error!</h1>"
-            print "<h3>Can't find internal Page '%s' in DB!</h3>" % pagename
-            print "<p>Did you run 'install_PyLucid.py' ???</p>"
-            import sys
-            sys.exit(1)
 
     def get_internal_group_id( self ):
         """
@@ -435,27 +474,34 @@ class db( mySQL ):
     #_____________________________________________________________________________
     ## Userverwaltung
 
-    def add_User( self, name, realname, email, password, admin ):
-        "Hinzufügen der Userdaten in die normale lucidCMS-Tabelle"
-        SQLcommand  = "INSERT INTO `%susers`" % dbconf["dbTablePrefix"]
-        SQLcommand += " ( name,realName,email,password,admin )"
-        SQLcommand += " VALUES ( %s,%s,%s,%s,%s );"
-        self.cursor.execute( SQLcommand, (name, realname, email, password, admin) )
-
     def normal_login_userdata( self, username ):
         "Userdaten die bei einem normalen Login benötigt werden"
         return self.select(
                 select_items    = ["id", "password", "admin"],
-                from_table      = "users",
+                from_table      = "md5users",
+                where           = ("name", username)
+            )[0]
+
+    def userdata( self, username ):
+        return self.select(
+                select_items    = ["id", "name","realname","email","admin"],
+                from_table      = "md5users",
                 where           = ("name", username)
             )[0]
 
     def add_md5_User( self, name, realname, email, pass1, pass2, admin ):
         "Hinzufügen der Userdaten in die PyLucid's JD-md5-user-Tabelle"
-        SQLcommand  = "INSERT INTO `%smd5users`" % dbconf["dbTablePrefix"]
-        SQLcommand += " ( name, realname, email, pass1, pass2, admin )"
-        SQLcommand += " VALUES ( %s,%s,%s,%s,%s,%s );"
-        self.cursor.execute( SQLcommand, (name, realname, email, pass1, pass2, admin) )
+        self.insert(
+                table = "md5users",
+                data  = {
+                    "name"      : name,
+                    "realname"  : realname,
+                    "email"     : email,
+                    "pass1"     : pass1,
+                    "pass2"     : pass2,
+                    "admin"     : admin
+                }
+            )
 
     def md5_login_userdata( self, username ):
         "Userdaten die beim JS-md5 Login benötigt werden"
@@ -464,6 +510,44 @@ class db( mySQL ):
                 from_table      = "md5users",
                 where           = ("name", username)
             )[0]
+
+    def exists_admin(self):
+        """
+        Existiert schon ein Admin?
+        """
+        result = self.select(
+            select_items    = ["id"],
+            from_table      = "md5users",
+            limit           = (1,1)
+        )
+        if result!=():
+            return True
+        else:
+            return False
+
+    def user_table_data(self):
+        """ wird in userhandling verwendet """
+        return self.select(
+            select_items    = ["id","name","realname","email","admin"],
+            from_table      = "md5users",
+        )
+
+    def update_userdata(self, id, user_data):
+        """ Editierte Userdaten wieder speichern """
+        self.update(
+            table   = "md5users",
+            data    = user_data,
+            where   = ("id",id),
+            limit   = 1
+        )
+
+    def del_user(self, id):
+        """ Löschen eines Users """
+        self.delete(
+            table   = "md5users",
+            where   = ("id", id),
+            limit   = 1
+        )
 
     #_____________________________________________________________________________
     ## Rechteverwaltung
@@ -475,31 +559,76 @@ class db( mySQL ):
                 where           = ("id", page_id),
             )[0]["permitViewPublic"]
 
+    #_____________________________________________________________________________
+    ## Markup
+
+    def get_markup_name(self, id_or_name):
+        """
+        Liefert von der ID den Markup Namen. Ist die ID schon der Name, ist
+        das auch nicht schlimm.
+        """
+        try:
+            markup_id = int(id_or_name)
+        except:
+            # Die Angabe ist offensichtlich schon der Name des Markups
+            return id_or_name
+        else:
+            # Die Markup-ID Auflösen zum richtigen Namen
+            return self.get_markupname_by_id( markup_id )
+
+    def get_markup_id(self, id_or_name):
+        """
+        Liefert vom Namen des Markups die ID, auch dann wenn es schon die
+        ID ist
+        """
+        try:
+            return int(id_or_name) # Ist eine Zahl -> ist also schon die ID
+        except:
+            pass
+
+        try:
+            return self.select(
+                select_items    = ["id"],
+                from_table      = "markups",
+                where           = ("name",id_or_name)
+            )[0]["id"]
+        except IndexError, e:
+            raise IndexError("Can't get markup-ID for the name '%s' type: %s error: %s" % (
+                    id_or_name, type(id_or_name), e
+                )
+            )
 
 
+    def get_markupname_by_id(self, markup_id):
+        """ Markup-Name anhand der ID """
+        try:
+            return self.select(
+                select_items    = ["name"],
+                from_table      = "markups",
+                where           = ("id",markup_id)
+            )[0]["name"]
+        except IndexError:
+            self.page_msg("Can't get markupname from markup id '%s' please edit this page and change markup!" % markup_id)
+            return "none"
 
-if __name__ == "__main__":
-    print ">Loaker Test:"
-    db = db()
 
-    # Prints all SQL-command:
-    db.debug = True
-
-    result = db.select(
+    def get_available_markups(self):
+        """
+        Bilded eine Liste aller verfügbaren Markups. Jeder Listeneintrag ist wieder
+        eine Liste aus [ID,name]. Das ist ideal für tools.html_option_maker().build_from_list()
+        """
+        markups = self.select(
             select_items    = ["id","name"],
-            from_table      = "pages",
-            where           = ("parent",0)#,debug=1
+            from_table      = "markups",
         )
-    db.dump_select_result( result )
+        result = []
+        for markup in markups:
+            result.append([ markup["id"],markup["name"] ])
+        return result
 
-    print "="*80
 
-    result = db.select(
-            select_items    = ["id","name"],
-            from_table      = "pages",
-            where           = [("parent",0),("id",1)]#,debug=1
-        )
-    db.dump_select_result( result )
+
+
 
 
 

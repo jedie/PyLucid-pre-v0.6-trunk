@@ -8,9 +8,11 @@ Der Parser füllt eine CMS Seite mit leben ;)
 Parsed die lucid-Tags/Funktionen, führt diese aus und fügt das Ergebnis in die Seite ein.
 """
 
-__version__="0.1.3"
+__version__="0.1.4"
 
 __history__="""
+v0.1.4
+    - apply_markup kommt mit markup id oder richtigen namen klar
 v0.1.3
     - textile Parser erhält nun auch die PyLucid-Objekt. page_msg ist hilfreich zum debuggen des Parsers ;)
 v0.1.2
@@ -21,6 +23,11 @@ v0.1.1
     - Versionsnummer geändert
 v0.1.0
     - Erste Version: Komplett neugeschrieben. Nachfolge vom pagerender.py
+"""
+
+__todo__ = """
+in apply_markup sollte nur noch mit markup IDs erwartet werden. Solange aber die Seiten keine IDs,
+sondern die richtigen Namen verwenden geht das leider noch nicht :(
 """
 
 import sys, cgi, re, time
@@ -45,7 +52,7 @@ class parser:
         per re.sub() werden die Tags ersetzt
         """
         if type(content)!=str:
-            return "Error! Content not string. Content is type %s" % cgi.escape(str(type(content)))
+            return "page_parser Error! Content not string. Content is type %s" % cgi.escape(str(type(content)))
 
         #~ start_time = time.time()
         content = re.sub( "<lucidTag:(.*?)/?>", self.handle_tag, content )
@@ -124,13 +131,6 @@ class render:
 
         side_content = self.apply_markup( side_data["content"], side_data["markup"] )
 
-        try:
-            CSS_content = '<style type="text/css">%s</style>' % self.db.side_style_by_id( self.CGIdata["page_id"] )
-        except IndexError:
-            self.page_msg( "Style (ID:%s) not found!" )
-            CSS_content = ""
-
-        self.parser.tag_data["page_style_link"]     = CSS_content
         self.parser.tag_data["page_name"]           = cgi.escape( side_data["name"] )
         self.parser.tag_data["page_title"]          = cgi.escape( side_data["title"] )
         self.parser.tag_data["page_last_modified"]  = self.tools.convert_date_from_sql(
@@ -158,6 +158,9 @@ class render:
         """
         Wendet das Markup auf den Seiteninhalt an
         """
+        # Die Markup-ID Auflösen zum richtigen Namen
+        markup = self.db.get_markup_name( markup )
+
         if markup == "textile":
             # textile Markup anwenden
             if self.config.system.ModuleManager_error_handling == True:

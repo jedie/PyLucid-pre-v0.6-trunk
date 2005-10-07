@@ -2,10 +2,10 @@
 # -*- coding: UTF-8 -*-
 
 __author__  = "Jens Diemer (www.jensdiemer.de)"
-__license__ = "GNU General Public License (GPL)"
+__license__ = "GNU General Public License http://www.opensource.org/licenses/gpl-license.php"
 __url__     = "http://www.PyLucid.org"
 
-__info__ = """<a href="%s" title="PyLucid - A OpenSource CMS in pure Python CGI by Jens Diemer">PyLucid</a> v0.4.1""" % __url__
+__info__ = """<a href="%s" title="PyLucid - A OpenSource CMS in pure Python CGI by Jens Diemer">PyLucid</a> v0.5""" % __url__
 
 """
 Rendert eine komplette Seite
@@ -41,9 +41,12 @@ Klasse werden Informationen über das Module/Plugin festgehalten, die vom
 Module-Manager eingelesen werden und PyLucid zur ferfügung gestellt werden.
 """
 
-__version__="0.3.3"
+__version__="0.4"
 
 __history__="""
+v0.4
+    - NEU: "class path" eigene Klasse um Pfade anzupassen, die auch von install_PyLucid verwendet wird.
+    - NEU: check_CSS_request(): damit das CSS direkt zum Browser geschickt werden kann.
 v0.3.3
     - page_parser.render() aus dem Module-Manager zur verfügung gestellt
 v0.3.2
@@ -112,19 +115,6 @@ v0.1.0
     - erste Version
 """
 
-__todo__ = """
-
- * Fehler bei abgelaufener Session!
- * Sicherheit: neue Seiten können auch nicht Admins anlegen...
-
-lucidTag_page_style_link
-    lifert nicht den CSS-Links, sondern bettet CSS ein!
-
-rendern:
-    Zum beschleunigten Seitenaufbau, sollten alle Teilergebnisse der Seite direkt
-    per print rausgeschrieben werden.
-"""
-
 # Als erstes Mal die Zeit stoppen ;)
 import time
 start_time = time.time()
@@ -139,7 +129,7 @@ import cgitb;cgitb.enable()
 import os, sys, urllib, cgi
 
 
-#~ print "Content-type: text/html; charset=utf-8\r\n\r\nDEBUG:<pre>"
+#~ print "Content-type: text/html; charset=utf-8\r\n\r\nDEBUG:"
 
 
 if not sys.version.startswith("2.4"):
@@ -153,7 +143,7 @@ from PyLucid_system import SQL
 from PyLucid_system import sessiondata
 from PyLucid_system import sessionhandling
 from PyLucid_system import SQL_logging
-from PyLucid_system import userhandling
+#~ from PyLucid_system import userhandling
 from PyLucid_system import module_manager
 from PyLucid_system import tools
 from PyLucid_system import preferences
@@ -161,6 +151,38 @@ from PyLucid_system import page_parser
 
 # Versions-Information übertragen
 preferences.__info__    = __info__
+
+
+
+
+
+class path:
+    """
+    Passt die verwendeten Pfade an.
+    Ist ausgelagert, weil hier und auch gleichzeitig von install_PyLucid verwendet wird.
+    """
+    def __init__(self, config):
+        self.config = config
+    def setup(self):
+        self.config.system.script_filename = os.path.split(self.config.system.script_filename)[0]
+
+        self.config.system.script_filename = os.path.normpath(self.config.system.script_filename)
+        self.config.system.document_root   = os.path.normpath(self.config.system.document_root)
+
+        # Pfad für Links festlegen
+        self.config.system.real_self_url = self.config.system.script_filename[len(self.config.system.document_root):]
+
+        self.config.system.real_self_url += "/index.py"
+
+        if self.config.system.poormans_modrewrite != True:
+            # poormans_modrewrite ist ausgeschaltet.
+            self.config.system.poormans_url = self.config.system.real_self_url
+
+
+
+
+
+
 
 
 
@@ -173,13 +195,13 @@ class LucidRender:
         # Instanzierung von Modulen
         self.PyLucid = {}
 
-        # PyLucid's Konfiguration
-        self.config         = config
-        self.PyLucid["config"] = self.config
-
         # Speichert Nachrichten die in der Seite angezeigt werden sollen
         self.page_msg       = sessiondata.page_msg()
         self.PyLucid["page_msg"] = self.page_msg
+
+        # PyLucid's Konfiguration
+        self.config         = config
+        self.PyLucid["config"] = self.config
 
         # Anhand des user agent werden die Pfade und evtl. gesetzt
         self.check_user_agent()
@@ -200,15 +222,17 @@ class LucidRender:
         self.PyLucid["CGIdata"] = self.CGIdata
 
         # Anbindung an die SQL-Datenbank, mit speziellen PyLucid Methoden
-        self.db             = SQL.db()
+        self.db            = SQL.db(self.PyLucid)
         self.PyLucid["db"] = self.db
 
+        self.check_CSS_request()
+
         # Verwaltung für Einstellungen aus der Datenbank
-        self.preferences    = preferences.preferences( self.PyLucid )
+        self.preferences            = preferences.preferences( self.PyLucid )
         self.PyLucid["preferences"] = self.preferences
 
-        tools.PyLucid = self.PyLucid
-        self.PyLucid["tools"] = tools
+        tools.PyLucid           = self.PyLucid
+        self.PyLucid["tools"]   = tools
 
         # Log-Ausgaben in SQL-DB
         self.log            = SQL_logging.log( self.PyLucid )
@@ -244,24 +268,44 @@ class LucidRender:
         #~ self.module_manager.debug()
         self.PyLucid["module_manager"] = self.module_manager
 
-        self.setup_parser()
-
-    def setup_parser( self ):
-        """
-        Den page_parser Einrichten
-        """
         # Der ModulManager, wird erst nach dem Parser instanziert. Damit aber der Parser
         # auf ihn zugreifen kann, packen wir ihn einfach dorthin ;)
         self.parser.module_manager = self.module_manager
 
+    def check_CSS_request(self):
+        """
+        Beantwortet direkt eine CSS anfrage wie:
+        /index.py?page_id=1&amp;command=page_style&amp;action=print_current_style
+        """
+        def check(key, value):
+            if self.CGIdata.has_key(key) and self.CGIdata[key] == value:
+                return True
+            return False
+
+        if not ( check("command","page_style") and check("action","print_current_style") ):
+            return
+
+        print "Content-type: text/css; charset=utf-8\r\n"
+        sys.stdout.write(self.db.side_style_by_id(self.CGIdata["page_id"]))
+        sys.exit()
+
+    def setup_parser(self):
+        """
+        Den page_parser Einrichten
+        """
+        page_parser.__info__    = __info__
+        page_parser.start_time  = start_time
+
         # "Statische" Tag's definieren
         self.parser.tag_data["powered_by"]  = __info__
-        if self.session.has_key("user"):
-            self.parser.tag_data["script_login"] = '<a href="%s?page_id=%s&command=auth&action=logout">logout [%s]</a>' % (
+        if self.session["user"] != False:
+            self.parser.tag_data["script_login"] = \
+            '<a href="%s?page_id=%s&amp;command=auth&amp;action=logout">logout [%s]</a>' % (
                 self.config.system.real_self_url, self.CGIdata["page_id"], self.session["user"]
             )
         else:
-            self.parser.tag_data["script_login"] = '<a href="%s?page_id=%s&command=auth&action=login">login</a>' % (
+            self.parser.tag_data["script_login"] = \
+            '<a href="%s?page_id=%s&amp;command=auth&amp;action=login">login</a>' % (
                 self.config.system.real_self_url, self.CGIdata["page_id"]
             )
 
@@ -274,29 +318,33 @@ class LucidRender:
         Anhand des user-agent wird poormans_modrewrite evtl. ausgeschaltet, damit Suchmaschinen
         die Seiten auch indexieren, dürfen sie keine poormans_modrewrite 404 Fehlerseiten "sehen".
         """
-        config.system.real_self_url = config.system.script_filename[len(config.system.document_root):]
+        # Pfade setzten, ist ausgelagert, weil es auch von install_PyLucid genutzt wird
+        path(config).setup()
 
-        if config.system.poormans_modrewrite != True:
-            # poormans_modrewrite ist ausgeschaltet.
-            config.system.poormans_url = config.system.real_self_url
+        if config.system.poormans_modrewrite == False:
+            # poormans_modrewrite wird eh nicht verwendet
             return
 
-        user_agent = os.environ["HTTP_USER_AGENT"]
+        try:
+            user_agent = os.environ["HTTP_USER_AGENT"]
+        except KeyError:
+            # Der Client schickt nicht den user agent, also gibt's kein poormans_modrewrite
+            pass
+        else:
+            for word in config.system.mod_rewrite_user_agents:
+                if user_agent.find( word ) != -1:
+                    # poormans_modrewrite: activated
+                    config.system.page_ident = ""
+                    #~ self.page_msg( "Debug: Browser identified, poormans_modrewrite activated." )
 
-        for word in config.system.mod_rewrite_user_agents:
-            if user_agent.find( word ) != -1:
-                # poormans_modrewrite: activated
-                config.system.page_ident = ""
-                #~ self.page_msg( "Debug: Browser identified, poormans_modrewrite activated." )
+                    if config.system.real_self_url == "/index.py":
+                        # Ist im Hauptverzeichnis installiert
+                        config.system.poormans_url = ""
+                    else:
+                        # Dateiname (index.py) abscheiden
+                        config.system.poormans_url = os.path.split( config.system.real_self_url )[0]
 
-                if config.system.real_self_url == "/index.py":
-                    # Ist im Hauptverzeichnis installiert
-                    config.system.poormans_url = ""
-                else:
-                    # Dateiname (index.py) abscheiden
-                    config.system.poormans_url = os.path.split( config.system.real_self_url )[0]
-
-                return
+                    return
 
         # Es wurde kein Browser erkannt, also wird kein poormans_modrewrite
         # verwendet.
@@ -449,8 +497,7 @@ class LucidRender:
                 side_data["content"]    = module_content
                 side_data["markup"]     = "none"
 
-        page_parser.__info__    = __info__
-        page_parser.start_time  = start_time
+        self.setup_parser()
 
         #~ self.page_msg( "Debug, markup:", side_data["markup"] )
 
@@ -460,7 +507,7 @@ class LucidRender:
         page = self.render.apply_template( side_content, side_data["template"] )
 
         if self.session.ID != False:
-            # User ist eingeloggt -> Es werden Informationen gespeichert.
+            # Es wurde eine Session eröffnet/geladen, die nun wieder gespeichert wird
             self.save_page_history()
 
             # Sessiondaten in die Datenbank schreiben
@@ -649,6 +696,21 @@ class LucidRender:
                 "Can'r read preferences from DB.",
                 "(Did you install PyLucid correctly?)"
             )
+        try:
+            self.db.select(
+                select_items    = ["id"],
+                from_table      = "pages",
+                where           = ["id",self.CGIdata["page_id"]]
+            )[0]["id"]
+        except IndexError:
+            # Die defaultPageName Angabe ist falsch
+            self.page_msg("default Page with ID %s not found!" % self.CGIdata["page_id"] )
+            self.CGIdata["page_id"] = self.db.select(
+                select_items    = ["id"],
+                from_table      = "pages",
+                order           = ("id","ASC"),
+                limit           = (0,1) # Nur den ersten ;)
+            )[0]["id"]
 
     def verify_page( self ):
         """
@@ -665,19 +727,11 @@ class LucidRender:
             return
         #~ self.page_msg( "page_permitViewPublic:",page_permitViewPublic )
 
-        if self.session.has_key("isadmin"):
-            # User ist eingeloggt
-
-            if self.session["isadmin"] == True:
-                # Administratoren dürfen immer alle Seiten sehen
-                return
-
-            else:
-                self.page_msg("JO")
-
+        if self.session.has_key("isadmin") and self.session["isadmin"] == True:
+            # Administratoren dürfen immer alle Seiten sehen
+            return
         else:
             # User ist nicht eingeloggt
-
             if page_permitViewPublic != 1:
                 self.page_msg( "401 Unauthorized. You must login to see '%s'" % self.CGIdata["REQUEST_URI"] )
             else:
@@ -693,7 +747,8 @@ class LucidRender:
 
 
 if __name__ == "__main__":
-    #~ print "Content-type: text/html; charset=utf-8\r\n"
+    #~ print "Content-type: text/html; charset=utf-8\r\n" # Debugging
+    #~ tools.stdout_marker() # Debug: Alle print-Ausgaben makieren
     #~ print "<pre>"
     page_content = LucidRender().make()
     #~ print "</pre>"

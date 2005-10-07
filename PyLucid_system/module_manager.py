@@ -9,9 +9,17 @@ Module Manager
 
 """
 
-__version__="0.1.2"
+__version__="0.2.1"
 
 __history__="""
+v0.2.1
+    - NEU: ModulManager config "sys_exit": Damit ein Modul auch wirklich einen sys.exit() ausführen kann.
+v0.2
+    - NEU: ModulManager config "get_CGI_data": Zur direkten Übergabe von CGI-Daten an die
+        gestartete Methode.
+    - Bessere Fehlerausgabe bei _run_method() und _make_class_instance()
+v0.1.3
+    - Die Regel "must_login" wird nun anhand von self.session.has_key("user") ermittelt
 v0.1.2
     - Ein paar mehr debug Ausgaben
     - CGI_dependency Methoden können nun anderen Einstellungen ("direct_out", "apply_markup" usw.) haben,
@@ -44,9 +52,10 @@ v0.0.1
 """
 
 
-import sys, os, glob, imp, cgi
 import cgitb;cgitb.enable()
+import sys, os, glob, imp, cgi
 
+#~ print "Content-type: text/html; charset=utf-8\r\n" # Hardcore-Debugging ;)
 
 debug = False
 #~ debug = True
@@ -107,8 +116,6 @@ class module_manager:
         """
         ein Kommando ausführen.
         """
-        #~ print "OK2"
-        #~ sys.exit(2)
         try:
             command = self.CGIdata["command"]
             action = self.CGIdata["action"]
@@ -124,7 +131,7 @@ class module_manager:
             self.page_msg( "Error run command:", e )
 
 
-    def _run_module_method( self, module_name, main_method, method_parameter=None ):
+    def _run_module_method(self, module_name, main_method, function_info=None):
         """
         Führt eine Methode eines Module aus.
         Kommt es irgendwo zu einem Fehler, ist es die selbsterstellte
@@ -154,7 +161,7 @@ class module_manager:
             method_properties = self._get_CGI_dependency_properties( method_properties, current_method )
 
         if self.class_debug == True:
-            self.page_msg( "current method_properties:", method_properties )
+            self.page_msg( "current method_properties:", cgi.escape(str(method_properties)))
 
         try:
             self._check_rights( module_name, method_properties, module_class, main_method )
@@ -165,6 +172,7 @@ class module_manager:
             else:
                 raise run_module_error( e )
 
+        method_arguments = self._get_method_arguments( module_name, method_properties, function_info )
 
         class_instance  = self._make_class_instance( module_name, module_class )
 
@@ -173,10 +181,10 @@ class module_manager:
         else:
             direct_out = False
 
-        self.put_data_to_module( module_name, class_instance, current_method )
+        self.put_data_to_module( module_name, class_instance, main_method, current_method )
 
         return self._run_method(
-            module_name, class_instance, current_method, direct_out, method_parameter, method_properties
+            module_name, class_instance, current_method, direct_out, method_arguments, method_properties
         )
 
 
@@ -213,10 +221,23 @@ class module_manager:
         """
         try:
             return module_class( self.PyLucid )
+        except TypeError,e:
+            if str(e) == "this constructor takes no arguments":
+                raise run_module_error(
+                    "Error in Moduleclass %s, __init__(self, PyLucid) not exists. Org.Error: %s" % (
+                        module_name, e
+                    )
+                )
+            elif str(e).startswith("__init__"):
+                raise run_module_error(
+                    "Error in Moduleclass %s: __init__ must look like: __init__(self, PyLucid). Org.Error: %s" % (
+                        module_name, e
+                    )
+                )
         except Exception, e:
-            raise run_module_error(
-                "[Can't make instance from class %s: %s]" % (module_name, e)
-            )
+                raise run_module_error(
+                    "[Can't make instance from class %s: %s]" % (module_name, e)
+                )
 
     def _get_method_properties( self, module_name, module_class, method ):
         """
@@ -241,17 +262,22 @@ class module_manager:
             self.class_debug = class_properties["debug"]
             if self.class_debug == True:
                 self.page_msg( "-"*30 )
-                self.page_msg(
-                    "Debug for %s.%s:" % (module_class, method)
-                )
+                self.page_msg("Debug for %s.%s:" % (module_class, method))
+                self.CGIdata.debug()
         else:
             self.class_debug = False
+
+        if self.class_debug == True:
+            self.page_msg( "get_method_properties for method '%s'" % method )
 
         try:
             method_properties = class_properties[method]
         except Exception, e:
+            if self.class_debug == True:
+                self.page_msg( "Can't get rights for method: %s" % e )
+                self.page_msg( "class_properties.keys():", class_properties.keys() )
             raise run_module_error(
-                "%s has no rights defined for method '%s' or CGI_dependent_actions faulty" % (module_name, method)
+                "%s has no rights defined for method '%s' or CGI_dependent_actions faulty (action value wrong?)" % (module_name, method)
             )
 
         check_type( module_name, method_properties, "module_manager_data", method )
@@ -294,7 +320,7 @@ class module_manager:
             )
 
         if must_login == True:
-            if self.session.ID == False:
+            if self.session["user"] == False:
                 raise run_module_error(
                     "[You must login to use %s for method %s]" % (module_name, method)
                 )
@@ -312,38 +338,109 @@ class module_manager:
                     "You must be an admin to use method %s from module %s!" % (method, module_name)
                 )
 
-    def put_data_to_module( self, module_name, class_instance, current_method ):
+    def _get_method_arguments(self, module_name, method_properties, function_info):
+        """
+        Wertet die 'get_CGI_data' Angaben aus.
+            - Checkt die CGI-Daten
+            - liefert Agumenten-Liste zurück
+        """
+        if function_info != None:
+            # Informationen aus dem <lucidFunction>-Tag
+            method_arguments = { "function_info": function_info }
+        else:
+            method_arguments = {}
+
+        if not method_properties.has_key("get_CGI_data"):
+            # Es gibt keine 'get_CGI_data'
+            return method_arguments
+
+        config = method_properties["get_CGI_data"]
+        if self.class_debug == True:
+            self.page_msg("'get_CGI_data'-config:", cgi.escape(str(config)))
+
+        # Zahlen in den CGI-Daten werden in sessiondata.convert_types() automatisch
+        # von string nach integer gewandelt!!!
+        for arg_name, arg_type in config.iteritems():
+            try:
+                data = self.CGIdata[arg_name]
+            except KeyError:
+                if self.class_debug == True:
+                    self.page_msg("Info: In CGI data Key '%s' not found. (Method use argument defaults?)" % arg_name)
+                # Parameter auslassen
+                continue
+
+            if arg_type == str and type(data) != str:
+                self.page_msg("TypeError: CGI-Data '%s' is not String!" % arg_name)
+            elif arg_type == int and type(data) != int:
+                self.page_msg("TypeError: CGI-Data '%s' is not a Integer!" % arg_name)
+
+            method_arguments[arg_name] = data
+
+        return method_arguments
+
+    def put_data_to_module( self, module_name, class_instance, main_method, current_method ):
         """
         Daten (Link-URLs) in die Modul-Klasse "einfügen".
         """
+        import urllib
         class_instance.link_url = "%s%s" % (
             self.config.system.poormans_url, self.config.system.page_ident
         )
         class_instance.base_url = "%s?page_id=%s" % (
             self.config.system.real_self_url, self.CGIdata["page_id"]
         )
-        class_instance.command_url = "%s?page_id=%s&command=%s" % (
+        class_instance.command_url = "%s?page_id=%s&amp;command=%s" % (
             self.config.system.real_self_url, self.CGIdata["page_id"], module_name
         )
-        class_instance.action_url = "%s?page_id=%s&command=%s&action=" % (
+        class_instance.action_url = "%s?page_id=%s&amp;command=%s&amp;action=" % (
             self.config.system.real_self_url, self.CGIdata["page_id"], module_name
         )
-        class_instance.current_action_url = "%s?page_id=%s&command=%s&action=%s" % (
+        class_instance.main_action_url = "%s?page_id=%s&amp;command=%s&amp;action=%s" % (
+            self.config.system.real_self_url, self.CGIdata["page_id"], module_name, main_method
+        )
+        class_instance.current_action_url = "%s?page_id=%s&amp;command=%s&amp;action=%s" % (
             self.config.system.real_self_url, self.CGIdata["page_id"], module_name, current_method
         )
         # Zum automatischen erstellen eines Menüs:
         class_instance.module_manager_build_menu = self.build_menu
 
-    def _run_method( self, module_name, class_instance, method, direct_out, method_parameter, method_properties ):
+
+
+    def _run_method( self, module_name, class_instance, method, direct_out, method_arguments, method_properties ):
         """
         Startet die Methode und verarbeitet die Ausgaben
         """
+        def run(method_arguments):
+            if self.class_debug == True:
+                self.page_msg("method_arguments for method '%s': %s" % (method, method_arguments))
+            try:
+                # Dict-Argumente übergeben
+                return unbound_method(**method_arguments)
+            except TypeError, e:
+                if not str(e).startswith(unbound_method.__name__):
+                    # Der Fehler ist nicht hier, bei der Dict übergabe zur unbound_method() aufgetretten, sondern
+                    # irgendwo im Modul selber!
+                    raise run_module_error("Fehler im Modul: %s" % e)
 
-        def run( method_parameter ):
-            if method_parameter == None:
-                return unbound_method()
-            else:
-                return unbound_method( method_parameter )
+                # Ermitteln der Argumente die wirklich von der unbound_method() verlangt werden
+                import inspect
+                args = inspect.getargspec(unbound_method)
+                real_method_arguments = args[0][1:]
+                argcount = len(real_method_arguments)
+
+                # Bessere Fehlermeldung generieren, wenn die von der Methode per get_CGI_data definierten Argumente
+                # nicht in den CGI-Daten vorhanden sind.
+                raise run_module_error(
+                    "ModuleManager >get_CGI_data<-error: \
+                    %s() takes exactly %s arguments %s, \
+                    but %s existing in get_CGI_data config: %s, \
+                    and %s given from CGI data: %s \
+                    --- Compare the html form (internal page?), the get_CGI_data config and the real arguments in the method!" % (
+                        unbound_method.__name__, argcount, real_method_arguments,
+                        len(method_properties["get_CGI_data"]), str(method_properties["get_CGI_data"].keys()),
+                        len(method_arguments), str(method_arguments.keys()),
+                    )
+                )
 
         # Methode aus Klasse erhalten
         if self.config.system.ModuleManager_error_handling == True:
@@ -356,23 +453,35 @@ class module_manager:
         else:
             unbound_method = getattr( class_instance, method )
 
+
         if direct_out != True:
             # Alle print Ausgaben werden abgefangen und zwischengespeichert um diese in
             # die CMS Seite einbaunen zu können
             redirector = self.tools.redirector()
 
+
         # Methode "ausführen"
-        if self.config.system.ModuleManager_error_handling == True:
-            try:
-                direct_output = run( method_parameter )
-            except Exception, e:
-                if direct_out != True:
-                    redirector.get() # stdout wiederherstellen
-                raise run_module_error(
-                    "[Can't run method '%s' from module '%s': %s]" % ( method, module_name, e )
-                )
-        else:
-            direct_output = run( method_parameter )
+        try:
+            direct_output = run(method_arguments)
+        except SystemExit, e:
+            if method_properties.has_key("sys_exit") and method_properties["sys_exit"] == True:
+                # Modul macht evtl. einen sys.exit() (z.B. beim direkten Download, MySQLdump)
+                sys.exit()
+            if direct_out != True:
+                redirect_out = redirector.get() # stdout wiederherstellen
+            # Beim z.B. page_style_link.print_current_style() wird ein sys.exit() ausgeführt
+            self.page_msg("Error in Modul %s.%s: A Module can't use sys.exit()!" % (module_name, method))
+        except Exception, e:
+            if direct_out != True:
+                redirector.get() # stdout wiederherstellen
+
+            msg = "[Can't run '%s.%s': %s]" % ( module_name, method, e )
+
+            if self.config.system.ModuleManager_error_handling == True:
+                raise run_module_error(msg)
+            else:
+                raise Exception(msg)
+
 
         ##________________________________________________________________________________________
         ## Ausgaben verarbeiten
@@ -380,12 +489,12 @@ class module_manager:
         if direct_out == True:
             # Das Modul kann direkte Ausgaben zum Browser machen (setzten von Cookies ect.)
             # Es kann aber auch Ausgaben zurückschicken die Angezeigt werden sollen (Login-Form)
-            return direct_output
+            redirect_out = "" # Es gab keinen redirector
+        else:
+            # Zwischengespeicherte print Ausgaben zurückliefern
+            redirect_out = redirector.get()
 
-        # Zwischengespeicherte print Ausgaben zurückliefern
-        redirect_out = redirector.get()
-
-        if type( direct_output ) == dict:
+        if type(direct_output) == dict:
             try:
                 content = direct_output["content"]
                 markup  = direct_output["markup"]
@@ -447,13 +556,14 @@ class module_manager:
 
         print "<ul>"
         for section, data in menu_data.iteritems():
-            print "\t<li><h5>%s</h5></li>" % section
+            print "\t<li><h5>%s</h5>" % section
             print "\t<ul>"
             for item in data:
                 print '\t\t<li><a href="%s%s">%s</a></li>' % (
                     action_url, item[0], item[1]
                 )
             print "\t</ul>"
+            print "\t</li>"
         print "</ul>"
 
     #________________________________________________________________________________________
@@ -520,7 +630,8 @@ class CGI_dependency_check:
 
         if type( dependency ) != dict:
             self.page_msg(
-                "Error in CGI_dependent_actions. Modul %s method %s: statements is not from type dict." % (
+                "Error in CGI_dependent_actions. Modul %s method %s: \
+                statements is not from type dict." % (
                     self.module_name, sub_method
                 )
             )
@@ -528,7 +639,8 @@ class CGI_dependency_check:
 
         if not (dependency.has_key("CGI_laws") or dependency.has_key("CGI_must_have") ):
             self.page_msg(
-                "Error in CGI_dependent_actions. Modul %s method %s: statements has no key CGI_laws or CGI_must_have" % (
+                "Error in CGI_dependent_actions. Modul %s method %s: \
+                statements has no key CGI_laws or CGI_must_have" % (
                     self.module_name, sub_method
                 )
             )
@@ -546,7 +658,8 @@ class CGI_dependency_check:
         if dependency.has_key( "CGI_must_have" ):
             if not type( dependency["CGI_must_have"] ) in (list,tuple):
                 self.page_msg(
-                    "Error in CGI_dependent_actions. Modul %s method %s: CGI_must_have statements are not type list or tuple." % (
+                    "Error in CGI_dependent_actions. Modul %s method %s: \
+                    CGI_must_have statements are not type list or tuple." % (
                             self.module_name, sub_method
                         )
                     )
@@ -566,7 +679,7 @@ class CGI_dependency_check:
         for key in keys:
             if not self.CGIdata.has_key( key ):
                 if self.debug == True:
-                    self.page_msg( "Error: key %s not found in keys %s" % (key,keys) )
+                    self.page_msg( "Error: key '%s' not found in keys %s" % (key,keys) )
                 return False
         return True
 
@@ -578,7 +691,7 @@ class CGI_dependency_check:
                     self.page_msg( "key %s not found in CGI_laws (%s)" % (key,CGI_laws) )
                 return False
 
-            if type( value ) == str:
+            if type( value ) == str: # Soll festgelegten String entsprechen
                 if not self.CGIdata[key] == value:
                     if self.debug == True:
                         self.page_msg(
@@ -587,7 +700,27 @@ class CGI_dependency_check:
                             )
                         )
                     return False
-            elif value == int:
+                return True
+            elif type( value ) == int: # Soll einer bestimmten Zahl entsprechen
+                try:
+                    self.CGIdata[key] = int( self.CGIdata[key] )
+                except Exception, e:
+                    self.page_msg(
+                        "Error in CGIdata for %s: Can't konvert CGIdata key %s to type int" % (
+                            self.module_name, key
+                        )
+                    )
+                    return False
+                if not self.CGIdata[key] == value:
+                    if self.debug == True:
+                        self.page_msg(
+                            "Error in CGIdata for %s: CGIdata key %s is not equal to %s" % (
+                                self.module_name, key, value
+                            )
+                        )
+                    return False
+                return True
+            elif value == int: # value muß einfach nur irgendeine Zahl sein
                 try:
                     self.CGIdata[key] = int( self.CGIdata[key] )
                 except Exception, e:
@@ -596,15 +729,16 @@ class CGI_dependency_check:
                             self.module_name, key
                         )
                     )
+                    return False
+                return True
             else:
                 self.page_msg(
-                    "Error in CGI_dependent_actions for %s: The CGI_law type %s for key %s not supported" % (
+                    "Error in CGI_dependent_actions for %s: \
+                    The CGI_law type %s for key %s not supported (Use CGI_must_have ?!?)" % (
                         self.module_name, cgi.escape( str(value) ), key
                     )
                 )
                 return False
-
-        return True
 
 
 

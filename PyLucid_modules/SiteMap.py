@@ -8,9 +8,12 @@ Generiert das SiteMap
 <lucidTag:SiteMap/>
 """
 
-__version__="0.0.4"
+__version__="0.0.5"
 
 __history__="""
+v0.0.5
+    - Link wird nun auch vom ModulManager verwendet.
+    - Testet page-title auch auf None
 v0.0.4
     - Anpassung an neuen ModulManager
 v0.0.3
@@ -49,16 +52,16 @@ class SiteMap:
         self.config     = PyLucid["config"]
         self.page_msg   = PyLucid["page_msg"]
 
-        self.link  = '<a href="'
-        self.link += self.config.system.real_self_url + self.config.system.page_ident
-        self.link += '%(link)s">%(name)s</a>'
-
     def lucidTag( self ):
         """ Baut die SiteMap zusammen """
         self.data = self.db.get_sitemap_data()
 
         self.parent_list = self.get_parent_list()
         #~ return str( self.parent_l    ist )
+
+        self.link  = '<a href="'
+        self.link += self.link_url
+        self.link += '%(link)s">%(name)s</a>'
 
         print '<div id="SiteMap">'
         self.make_sitemap()
@@ -84,7 +87,7 @@ class SiteMap:
                     "name"  : cgi.escape( site["name"] ),
                 }
 
-                if (site["title"] != "") and (site["title"] != site["name"]):
+                if (site["title"] != "") and (site["title"] != None) and (site["title"] != site["name"]):
                     print " - %s" % cgi.escape( site["title"] )
 
                 print "</li>\n"
