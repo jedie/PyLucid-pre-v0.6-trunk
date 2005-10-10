@@ -41,9 +41,11 @@ Klasse werden Informationen über das Module/Plugin festgehalten, die vom
 Module-Manager eingelesen werden und PyLucid zur ferfügung gestellt werden.
 """
 
-__version__="0.4"
+__version__="0.4.1"
 
 __history__="""
+v0.4.1
+    - Bug: In class path wurde poormans_url nicht gesetzt wenn poormans_modrewrite eingeschaltet war
 v0.4
     - NEU: "class path" eigene Klasse um Pfade anzupassen, die auch von install_PyLucid verwendet wird.
     - NEU: check_CSS_request(): damit das CSS direkt zum Browser geschickt werden kann.
@@ -171,13 +173,9 @@ class path:
 
         # Pfad für Links festlegen
         self.config.system.real_self_url = self.config.system.script_filename[len(self.config.system.document_root):]
-
         self.config.system.real_self_url += "/index.py"
 
-        if self.config.system.poormans_modrewrite != True:
-            # poormans_modrewrite ist ausgeschaltet.
-            self.config.system.poormans_url = self.config.system.real_self_url
-
+        self.config.system.poormans_url = self.config.system.real_self_url
 
 
 

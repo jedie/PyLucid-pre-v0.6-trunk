@@ -1,9 +1,11 @@
 #!/usr/bin/python
 # -*- coding: ISO-8859-1 -*-
 
-__version__ = "0.0.7"
+__version__ = "0.0.8"
 
 __history__ = """
+v0.0.8
+    - Fehler in is_cgi() behoben
 v0.0.7
     - subprocess unnötig, da have_fork, have_popen2 und have_popen3 unnötigerweise
         auf False im RequestHandler gesetzt wurden. Das bedeutetet das die CGI
@@ -28,16 +30,16 @@ class MyRequestHandler( CGIHTTPServer.CGIHTTPRequestHandler ):
         """
         Einfachere Variante, sodas alle Python-Skripte überall ausgeführt werden#
         """
-        base, filename = os.path.split( self.path )
-
-        if ".py" in filename:
-            if "?" in filename:
-                os.environ["SCRIPT_FILENAME"] = filename.split("?",1)[0]
+        if ".py" in self.path:
+            os.environ['DOCUMENT_ROOT'] = os.getcwd()
+            if "?" in self.path:
+                filepath, getparam = self.path.split("?",1)
+                base, filename = os.path.split(filepath)
+                self.cgi_info = base, filename + "?" + getparam
             else:
-                os.environ["SCRIPT_FILENAME"] = filename
-
-            os.environ['DOCUMENT_ROOT']     = os.getcwd()
-            self.cgi_info = base, filename
+                base, filename = os.path.split(self.path)
+                self.cgi_info = base, filename
+            os.environ["SCRIPT_FILENAME"] = filename
             return True
 
 
